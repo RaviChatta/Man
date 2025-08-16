@@ -1,203 +1,120 @@
-"""
-This module provides functions to download, convert, and compress images, and then convert them into a PDF file.
-
-Copy right (c):-  Rahat4089 and VOATcb
-Modified:- Dra-Sama
-"""
-
 from pathlib import Path
 from PIL import Image, UnidentifiedImageError
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from loguru import logger
 import os
-
-import pillow_avif  # This registers AVIF format support with Pillow
-import pillow_heif
-
-import requests
 import shutil
-
+import requests
 from cloudscraper import create_scraper
 from asyncio import to_thread
 import asyncio
-
 import PyPDF2
 
-def thumbnali_images(image_url, download_dir, quality=80, file_name="thumb.jpg"):
-    if not os.path.exists(download_dir):
-        os.makedirs(download_dir)
-    
-    image_response = requests.get(image_url)
-    if image_response.status_code == 200:
-        img_path = os.path.join(download_dir, file_name)
-        with open(img_path, 'wb') as img_file:
-            img_file.write(image_response.content)
-        
-        return img_path
-    else:
-        return None
+import pillow_avif  # register AVIF
+import pillow_heif  # register HEIF
 
-async def download_through_cloudscrapper(image_url, download_dir, quality=80):
+
+async def download_images_cloudscraper(image_urls, download_dir, quality=80):
     scraper = create_scraper()
-    
-    if not os.path.exists(download_dir):
-        os.makedirs(download_dir)
-    
-    images_file = []
-    for idx, image_url in enumerate(image_url, 1):
+    os.makedirs(download_dir, exist_ok=True)
+    downloaded = []
+
+    for idx, url in enumerate(image_urls, 1):
         retries = 0
-        while retries < 4:
-            image_response = await to_thread(scraper.get, image_url)
-            if image_response.status_code == 200:
-                img_path = os.path.join(download_dir, f"{idx}.jpg")
-                with open(img_path, 'wb') as img_file:
-                    img_file.write(image_response.content)
+        while retries < 3:
+            try:
+                resp = await to_thread(scraper.get, url)
+                if resp.status_code == 200:
+                    img_path = os.path.join(download_dir, f"{idx}.jpg")
+                    with open(img_path, "wb") as f:
+                        f.write(resp.content)
+                    # Verify image can open
                     try:
                         with Image.open(img_path) as img:
                             img = img.convert("RGB")
                             img.save(img_path, "JPEG", quality=quality, optimize=True)
-                            
-                    except Exception as e:
-                        logger.exception(f"Error converting image: {e}")
-                    
-                    images_file.append(img_path)
-                    break
-            else:
-                logger.exception(f"Download :- {retries} :- {image_url}: {image_response.text}")
-                retries += 1
-                await asyncio.sleep(3)
-                
-    return images_file
-    
-
-                
-def download_and_convert_images(images, download_dir, quality=80, target_width=None):
-    if not os.path.exists(download_dir):
-        os.makedirs(download_dir)
-
-    image_files = []
-    for idx, image_url in enumerate(images, 1):
-        retries = 0
-        while retries < 4:
-            image_response = requests.get(image_url)
-            if image_response.status_code == 200:
-                img_path = os.path.join(download_dir, f"{idx}.jpg")
-                if os.path.exists(download_dir):
-                    with open(img_path, 'wb') as img_file:
-                        img_file.write(image_response.content)
-                        try:
-                            with Image.open(img_path) as img:
-                                img = img.convert("RGB")
-                                img_width, img_height = img.size
-                                if target_width:
-                                    new_height = int((target_width / img_width) * img_height)
-                                    img = img.resize((target_width, new_height), Image.LANCZOS)
-                                    img.save(img_path, "JPEG", quality=quality, optimize=True)
-                        except Exception as e:
-                            logger.exception(f"Error converting image: {e}")
-                        
-                        image_files.append(img_path)
+                        downloaded.append(img_path)
+                        break
+                    except UnidentifiedImageError:
+                        logger.error(f"Skipped invalid image: {url}")
+                        os.remove(img_path)
                         break
                 else:
-                     raise Exception("Tasks cancelled")
-                    
-            else:
-                logger.exception(f"Download :- {retries} :- {image_url}: {image_response.text}")
+                    retries += 1
+                    await asyncio.sleep(2)
+            except Exception as e:
+                logger.error(f"Error downloading {url}: {e}")
                 retries += 1
-
-    return image_files
+    return downloaded
 
 
 def compress_image(image_path, output_path, quality=80, target_width=None):
-    """Compress the image by resizing and reducing its quality."""
     try:
-        img = Image.open(image_path).convert("RGB")
-        img_width, img_height = img.size
-
-        if target_width:
-            new_height = int((target_width / img_width) * img_height)
-            img = img.resize((target_width, new_height), Image.LANCZOS)
-
-        img.save(output_path, "JPEG", quality=quality, optimize=True)
+        with Image.open(image_path) as img:
+            img = img.convert("RGB")
+            if target_width:
+                w, h = img.size
+                new_h = int((target_width / w) * h)
+                img = img.resize((target_width, new_h), Image.LANCZOS)
+            img.save(output_path, "JPEG", quality=quality, optimize=True)
         return output_path
     except Exception as e:
-        logger.error(f"Error compressing image {image_path}: {e}")
-        return image_path
+        logger.error(f"Failed compressing {image_path}: {e}")
+        return None  # Skip invalid image
 
 
 def convert_images_to_pdf(image_files, pdf_output_path, compressed_dir, password=None, compression_quality=50):
     if not image_files:
-        logger.warning("No images provided for PDF conversion.")
-        return "No images provided for PDF conversion."
+        logger.warning("No valid images to convert.")
+        return
 
-    if not os.path.exists(compressed_dir):
-        os.makedirs(compressed_dir)
-    
-    temp_pdf_path = str(pdf_output_path).replace(".pdf", "_temp.pdf")
-    
-    c = canvas.Canvas(str(temp_pdf_path), pagesize=letter)
+    os.makedirs(compressed_dir, exist_ok=True)
+    temp_pdf = str(pdf_output_path).replace(".pdf", "_temp.pdf")
+    c = canvas.Canvas(temp_pdf, pagesize=letter)
 
-    # Set the target width (e.g., the width of the smallest image)
-    try: target_width = min(Image.open(image_file).width for image_file in image_files)
-    except: target_width = None
+    # Target width
+    try:
+        target_width = min(Image.open(f).width for f in image_files)
+    except Exception:
+        target_width = None
 
-    def draw_image(image_file):
+    for img_file in image_files:
+        compressed_img = os.path.join(compressed_dir, os.path.basename(img_file))
+        compressed_img = compress_image(img_file, compressed_img, compression_quality, target_width)
+        if not compressed_img:
+            continue
         try:
-            img = Image.open(image_file)
-            img_width, img_height = img.size
-            # Calculate the new height maintaining the aspect ratio
-            new_height = int(target_width * img_height / img_width)
-            c.setPageSize((target_width, new_height))
-            c.drawImage(str(image_file), 0, 0, width=target_width, height=new_height)
-            c.showPage()  # Create a new page for each image
+            with Image.open(compressed_img) as img:
+                w, h = img.size
+                h_new = int(target_width * h / w) if target_width else h
+                c.setPageSize((target_width, h_new) if target_width else (w, h))
+                c.drawImage(compressed_img, 0, 0, width=target_width or w, height=h_new)
+                c.showPage()
         except Exception as e:
-            logger.error(f"Failed to process image {image_file}: {e}")
-
-    # Process and compress the images
-    compressed_images = []
-    for image_file in image_files:
-        compressed_image_path = f"{compressed_dir}/{os.path.basename(image_file)}"
-        compressed_image = compress_image(image_file, compressed_image_path, quality=compression_quality, target_width=target_width)
-        compressed_images.append(compressed_image)
-        draw_image(compressed_image)
+            logger.error(f"Skipping image in PDF: {img_file} -> {e}")
 
     c.save()
-    
+
     if password:
-        encrypt_pdf(temp_pdf_path, str(pdf_output_path), password)
-        if os.path.exists(temp_pdf_path):
-            os.remove(temp_pdf_path)  # Remove the temporary unprotected PDF
+        encrypt_pdf(temp_pdf, str(pdf_output_path), password)
+        os.remove(temp_pdf)
     else:
-        os.rename(temp_pdf_path, str(pdf_output_path))
+        os.rename(temp_pdf, str(pdf_output_path))
 
     shutil.rmtree(compressed_dir, ignore_errors=True)
-    #for image_file in image_files:
-        #os.remove(image_file)
-
-    logger.info(f"Compressed PDF created at {pdf_output_path}")
-    return None
+    logger.info(f"PDF created at {pdf_output_path}")
 
 
 def encrypt_pdf(input_path, output_path, password):
-    """Encrypt a PDF with a password using PyPDF2"""
     try:
-        with open(input_path, 'rb') as input_file:
-            reader = PyPDF2.PdfReader(input_file)
+        with open(input_path, "rb") as f:
+            reader = PyPDF2.PdfReader(f)
             writer = PyPDF2.PdfWriter()
-
-            # Add all pages to the writer
             for page in reader.pages:
                 writer.add_page(page)
-
-            # Encrypt the PDF
-            writer.encrypt(user_password=password, owner_password=None, 
-                          use_128bit=True)
-
-            # Save the encrypted PDF
-            with open(output_path, 'wb') as output_file:
-                writer.write(output_file)
-
+            writer.encrypt(user_password=password, owner_password=None, use_128bit=True)
+            with open(output_path, "wb") as out_f:
+                writer.write(out_f)
     except Exception as e:
         logger.error(f"Failed to encrypt PDF: {e}")
-        
