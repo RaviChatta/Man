@@ -233,7 +233,6 @@ async def help(client, message):
         )
         await asyncio.sleep(180)  # Auto-delete after 3 minutes
         await m.delete()
-
 @Bot.on_message(filters.command("stats"))
 async def show_ping(_, message):
     if Vars.IS_PRIVATE and message.chat.id not in Vars.ADMINS:
@@ -242,14 +241,20 @@ async def show_ping(_, message):
             caption="<blockquote>🚫 Access Denied</blockquote>"
         )
     
+    # First send the "Gathering metrics" message
+    st = await message.reply_photo(
+        random.choice(Vars.PICS),
+        caption='<blockquote>📊 <b>Gathering System Metrics...</b></blockquote>'
+    )
     
+    # Get all system metrics
     total, used, free = shutil.disk_usage(".")
     total = humanbytes(total)
     used = humanbytes(used)
     free = humanbytes(free)
     net_start = psutil.net_io_counters()
 
-    time.sleep(2)
+    await asyncio.sleep(2)  # Wait to calculate network speed
     net_end = psutil.net_io_counters()
 
     bytes_sent = net_end.bytes_sent - net_start.bytes_sent
@@ -264,16 +269,8 @@ async def show_ping(_, message):
     except: 
         uptime = "N/A"
 
-    start_t = time.time()
-    st = await message.reply_photo(
-        random.choice(Vars.PICS),
-        caption='<blockquote>📊 <b>Gathering System Metrics...</b></blockquote>'
-    )    
-    end_t = time.time()
-    time_taken_s = (end_t - start_t) * 1000 
-    
-    msg = await message.reply_photo(
-        random.choice(Vars.PICS),
+    # Edit the original message with the stats
+    await st.edit_caption(
         caption=(
             "<b>🖥 SYSTEM STATISTICS</b>\n\n"
             "<blockquote>"
@@ -288,15 +285,15 @@ async def show_ping(_, message):
             f"<b>Pyrogram:</b> {_.__version__}\n"
             f"<b>Network:</b> {humanbytes(net_end.bytes_sent + net_end.bytes_recv)} total\n"
             f"<b>Speed:</b> ▲{humanbytes(bytes_sent/2)}/s ▼{humanbytes(bytes_recv/2)}/s\n"
-            f"<b>Ping:</b> {time_taken_s:.3f} ms\n"
             f"<b>Queue:</b> {queue.qsize()} pending"
             "</blockquote>"
-        )
+        ),
     )
-        # Auto-delete after 1 minute
+    
+    # Auto-delete after 1 minute
     await asyncio.sleep(60)
     try:
-        await msg.delete()
+        await st.delete()
     except:
         pass
   
