@@ -54,23 +54,24 @@ async def send_manga_chapter(data, picturesList, user, sts, worker_id, webs, use
         regex = uts[str(user_id)].get('setting', {}).get('regex', None)
         picturesList = picturesList if picturesList else data['pictures_list']
 
-        flen = int(
-            uts[str(user_id)].get('setting', {}).get('file_name_len', 30)
+        flen = int(uts.get(str(user_id), {}).get('setting', {}).get('file_name_len', 30))
+        
         if isinstance(data, list):
             episode_number1 = str(get_episode_number(data[0]['title']))
             if (episode_number1 == "None") or not episode_number1:
                 episode_number1 = clean(data[0]['title'])
             else:
                 episode_number1 = episode_number1.zfill(int(regex)) if regex else episode_number1
-
+        
             episode_number2 = str(get_episode_number(data[-1]['title']))
             if (episode_number2 == "None") or not episode_number2:
                 episode_number2 = clean(data[-1]['title'])
             else:
                 episode_number2 = episode_number2.zfill(int(regex)) if regex else episode_number2
-
+        
             episode_number = f"{episode_number1}-{episode_number2}"
             manga_title = clean(data[0]['manga_title'], flen)
+
 
         else:
             episode_number = str(get_episode_number(data['title']))
