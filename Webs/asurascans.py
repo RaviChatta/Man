@@ -91,55 +91,53 @@ class AsuraScansWebs(Scraper):
       
     return chapters_list[(page - 1) * 60:page * 60] if page != 1 else chapters_list
 
-  async def get_updates(self, page:int=1):
-      output = []
-      max_pages = 3
-      while page <= max_pages:
-          url = f"https://asuracomic.net/page/{page}"
-          # Use cloudscraper to bypass Cloudflare
-          results = await self.get(url, headers=self.headers, cs=True)
-          if not results:
-              page += 1
-              continue
-
-          bs = BeautifulSoup(results, "html.parser")
-          container = bs.find(class_="text-white mb-1 md:mb-5 mt-5")
-          if container:
-              cards = container.find_all(class_="grid grid-rows-1 grid-cols-12 m-2")
-              for card in cards:
-                  try:
-                      data = {}
-                      a = card.find("span", class_="text-[15px] font-medium hover:text-themecolor hover:cursor-pointer").find_next("a")
-                      data['url'] = urljoin(self.url, a.get('href').strip())
-                      data['manga_title'] = a.text.strip()
-                      chap = card.find(class_="flex-1 inline-block mt-1")
-                      data['chapter_url'] = urljoin(self.url, chap.find_next("a").get('href').strip())
-                      data['title'] = data['chapter_url'].split("/")[-1]
-                      output.append(data)
-                  except Exception as e:
-                      logger.warning(f"Failed to parse card: {e}")
-          page += 1
-      return output
-
   async def get_pictures(self, url, data=None):
-      response = await self.get(url, headers=self.headers, cs=True)
-      if not response:
-          return []
-      bs = BeautifulSoup(response, "html.parser")
-      script_tags = bs.find_all('script')
-      image_links = []
-      for script in script_tags:
-          if script.string and "self.__next_f.push" in script.string and r'\"pages\"' in script.string:
-              pattern = r'\\\"pages\\\":(\[.*?])'
-              match = re.search(pattern, script.string)
-              if match:
-                  json_string = f'{{"pages":[{match.group(1)}]}}'.replace(r'\"', '"')
-                  try:
-                      json_data = json.loads(json_string)
-                      nested_pages = json_data['pages'][0]
-                      image_links = [page['url'] for page in nested_pages if isinstance(page, dict)]
-                  except Exception as e:
-                      logger.warning(f"Failed to parse JSON pages: {e}")
-                  return image_links
-      return image_links
+    response = await self.get(url, headers=self.headers)
+    bs = BeautifulSoup(response, "html.parser")
+    
+    script_tags = bs.find_all('script')
+    image_links = []
+    for script in script_tags:
+       if script.string and "self.__next_f.push" in script.string and r'\"pages\"' in script.string:
+           script_content = script.string
+           pattern = r'\\\"pages\\\":(\[.*?])'
+           match = re.search(pattern, script_content)
+           if match:
+               json_string = f'{{"pages":[{match.group(1)}]}}'
+               json_string = json_string.replace(r'\"', '"')
+               json_data = json.loads(json_string)
+               nested_pages = json_data['pages'][0]
+               image_links = [page['url'] for page in nested_pages if isinstance(page, dict)]
+               return image_links
 
+  async def get_updates(self, page:int=1):
+    output = []
+    while page <= 3:
+      url = f"https://asuracomic.net/page/{page}"
+      results = await self.get(url, headers=self.headers)
+      
+      bs = BeautifulSoup(results, "html.parser")
+      container = bs.find(class_="text-white mb-1 md:mb-5 mt-5")
+      if container:
+        cards = container.find_all(class_="grid grid-rows-1 grid-cols-12 m-2")
+        #print(cards)
+        if cards:
+          for card in cards:
+            try:
+              data = {}
+              a = card.find("span", class_="text-[15px] font-medium hover:text-themecolor hover:cursor-pointer").find_next("a")
+              data['url'] = urljoin(self.url, a.get('href').strip())
+              
+              data['manga_title'] = a.text.strip()
+              chap = card.find(class_="flex-1 inline-block mt-1")
+              
+              data['chapter_url'] = urljoin(self.url, chap.find_next("a").get('href').strip())
+              data['title'] = data['chapter_url'].split("/")[-1]
+              
+              output.append(data)
+            except:
+              continue
+        
+      page += 1
+    
+    return output
