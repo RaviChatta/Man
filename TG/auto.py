@@ -4,6 +4,7 @@ from .storage import web_data, clean, retry_on_flood, get_episode_number, queue
 from .wks import send_manga_chapter
 
 import asyncio
+import inspect
 import os
 
 
@@ -12,8 +13,13 @@ async def get_updates_manga():
 
     for i in web_data.keys():
         try:
-            # Force Cloudscraper for sites like Asura
-            raw_data = await web_data[i].get_updates(cs=True)
+            # Check if get_updates accepts 'cs'
+            get_updates_params = inspect.signature(web_data[i].get_updates).parameters
+            if "cs" in get_updates_params:
+                raw_data = await web_data[i].get_updates(cs=True)
+            else:
+                raw_data = await web_data[i].get_updates()
+
             for data in raw_data:
                 if data['url'] in dts:
                     episode_number = str(get_episode_number(data['title']))
@@ -41,14 +47,21 @@ async def get_updates_manga():
 
                                     lastest_ep = data_ep_num
                                     if lastest_ep < chapter_ep:
-                                        # Force Cloudscraper for pictures
-                                        pictures = await web_data[i].get_pictures(url=data['chapter_url'], data=data, cs=True)
+                                        # Check if get_pictures accepts 'cs'
+                                        get_pics_params = inspect.signature(web_data[i].get_pictures).parameters
+                                        if "cs" in get_pics_params:
+                                            pictures = await web_data[i].get_pictures(url=data['chapter_url'], data=data, cs=True)
+                                        else:
+                                            pictures = await web_data[i].get_pictures(url=data['chapter_url'], data=data)
+
                                         if pictures:
-                                            # Filter out broken images
                                             valid_pictures = []
                                             for pic in pictures:
                                                 try:
-                                                    resp = await web_data[i].get(pic, cs=True)
+                                                    if "cs" in get_pics_params:
+                                                        resp = await web_data[i].get(pic, cs=True)
+                                                    else:
+                                                        resp = await web_data[i].get(pic)
                                                     if resp:
                                                         valid_pictures.append(pic)
                                                 except:
@@ -58,12 +71,20 @@ async def get_updates_manga():
                                             data['pictures_list'] = valid_pictures
                                             updates.append(data)
                     else:
-                        pictures = await web_data[i].get_pictures(url=data['chapter_url'], data=data, cs=True)
+                        get_pics_params = inspect.signature(web_data[i].get_pictures).parameters
+                        if "cs" in get_pics_params:
+                            pictures = await web_data[i].get_pictures(url=data['chapter_url'], data=data, cs=True)
+                        else:
+                            pictures = await web_data[i].get_pictures(url=data['chapter_url'], data=data)
+
                         if pictures:
                             valid_pictures = []
                             for pic in pictures:
                                 try:
-                                    resp = await web_data[i].get(pic, cs=True)
+                                    if "cs" in get_pics_params:
+                                        resp = await web_data[i].get(pic, cs=True)
+                                    else:
+                                        resp = await web_data[i].get(pic)
                                     if resp:
                                         valid_pictures.append(pic)
                                 except:
@@ -87,7 +108,6 @@ async def send_updates(data, webs):
 
     for user_id in user_ids:
         try:
-            # Always send fresh files to avoid FileReferenceExpired
             result = await send_manga_chapter(
                 data,
                 picturesList=data['pictures_list'],
@@ -104,7 +124,6 @@ async def send_updates(data, webs):
             success = False
 
     if success:
-        # Update database only if all sends succeeded
         dts[data['url']]["Lastest"] = episode_number
         sync()
 
