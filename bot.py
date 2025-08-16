@@ -19,7 +19,7 @@ class Vars:
   )
   
   LOG_CHANNEL = os.environ.get("LOG_CHANNEL", "")
-  UPDATE_CHANNEL = os.environ.get("UPDATE_CHANNEL", "@TFIBOTS")
+  UPDATE_CHANNEL = os.environ.get("UPDATE_CHANNEL", "@TFIBOTS_SUPPORT")
   DB_URL = os.environ.get("DB_URL", "mongodb+srv://senku4:1S1Y7OeNUe9dDs8B@senku.bqs9fgx.mongodb.net/?retryWrites=true&w=majority&appName=senku")
   
   PORT = int(os.environ.get("PORT", "8080"))
