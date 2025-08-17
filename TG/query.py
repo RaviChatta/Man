@@ -6,6 +6,7 @@ import random
 from Tools.db import *
 from pyrogram.errors import FloodWait
 import asyncio
+from typing import Dict, List, Optional, Tuple, Union
 
 # Helper function to handle flood waits
 async def retry_on_flood(func, *args, **kwargs):
@@ -123,10 +124,7 @@ async def ch_handler(client, query):
     sf = webs.sf
 
     # Prepare response text
-    if "msg" in bio_list:
-        message_text = bio_list['msg'][:1022]
-    else:
-        message_text = f"<b>{bio_list['title']}</b>"
+    message_text = bio_list['msg'][:1022] if "msg" in bio_list else f"<b>{bio_list['title']}</b>"
 
     buttons = [
         [
@@ -138,85 +136,7 @@ async def ch_handler(client, query):
     await retry_on_flood(
         query.edit_message_text,
         message_text,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
-
-@Bot.on_callback_query(filters.regex("^ch"))
-async def p_handler(client, query):
-    """Display chapter list with pagination"""
-    if query.data not in chaptersList:
-        return await query.answer("⌛ This button has expired, please search again", show_alert=True)
-
-    reply = query.message.reply_to_message
-    if not reply:
-        return await query.answer("This command needs to be used in reply to a message", show_alert=True)
-
-    # Verify user ownership
-    if reply.from_user.id != query.from_user.id:
-        return await query.answer("❌ This action is not for you", show_alert=True)
-
-    webs, data, rdata = chaptersList[query.data]
-    sf = webs.sf
-
-    try:
-        chapters = await webs.iter_chapters(data)
-    except TypeError:
-        chapters = webs.iter_chapters(data)
-
-    if not chapters:
-        return await query.answer("❌ No chapters found", show_alert=True)
-
-    # Check subscription status
-    subs_bool = get_subs(str(query.from_user.id), rdata['url'])
-    
-    # Build chapter buttons
-    buttons = []
-    for chapter in chapters:
-        c = f"pic|{hash(chapter['url'])}"
-        chaptersList[c] = (webs, chapter)
-        btn_text = f"Ch. {chapter['title']}" if chapter['title'].isdigit() else chapter['title']
-        buttons.append(InlineKeyboardButton(btn_text, callback_data=c))
-
-    # Split buttons into rows
-    buttons = split_list(buttons[:60])
-    
-    # Add pagination if needed
-    c = f"pg:{sf}:{hash(chapters[-1]['url'])}:"
-    if len(chapters) > 60 or sf == "ck":
-        pagination[c] = (webs, data, rdata)
-        buttons.append([
-            InlineKeyboardButton("⏮", callback_data=f"{c}1"),
-            InlineKeyboardButton("◀", callback_data=f"{c}2"),
-            InlineKeyboardButton("▶", callback_data=f"{c}5"),
-            InlineKeyboardButton("⏭", callback_data=f"{c}10")
-        ])
-
-    # Add subscription button
-    sub_callback = f"subs:{hash(rdata['url'])}"
-    subscribes[sub_callback] = (webs, rdata)
-    sub_button = [InlineKeyboardButton(
-        "🔔 Subscribed" if subs_bool else "📯 Subscribe", 
-        callback_data=sub_callback
-    )]
-    buttons.insert(0, sub_button)
-
-    # Add special buttons based on source
-    if sf == "ck":
-        scan_callback = f"sgh:{sf}:{hash(chapters[0]['url'])}"
-        pagination[scan_callback] = (chapters, webs, rdata, "1")
-        buttons.append([InlineKeyboardButton("👥 Scanlation Groups", callback_data=scan_callback)])
-    else:
-        full_callback = f"full:{sf}:{hash(chapters[0]['url'])}"
-        pagination[full_callback] = (chapters[:60], webs)
-        buttons.append([InlineKeyboardButton("📖 All Chapters", callback_data=full_callback)])
-
-    # Add back button
-    buttons.append([InlineKeyboardButton("🔙 Back", callback_data=f"bk.s.{sf}")])
-
-    await retry_on_flood(
-        query.edit_message_reply_markup,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+        reply_markup=InlineKeyboardMarkup(buttons))
 
 # ========================
 # PAGINATION HANDLERS
@@ -306,8 +226,8 @@ async def pg_handler(client, query):
     subscribes[sub_callback] = (webs, rdata)
     sub_button = [InlineKeyboardButton(
         "🔔 Subscribed" if subs_bool else "📯 Subscribe", 
-        callback_data=sub_callback
-    )]
+        callback_data=sub_callback)
+    ]
     buttons.insert(0, sub_button)
 
     # Add special buttons based on source
@@ -328,8 +248,7 @@ async def pg_handler(client, query):
 
     await retry_on_flood(
         query.edit_message_reply_markup,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+        reply_markup=InlineKeyboardMarkup(buttons))
 
 # ========================
 # SCANLATION GROUP HANDLERS
@@ -348,7 +267,7 @@ async def cgk_handler(client, query):
     chapters, webs, rdata, page = pagination[query.data]
     
     # Organize chapters by group
-    groups = {}
+    groups: Dict[str, List[Dict]] = {}
     for chapter in chapters:
         group_name = chapter.get('group_name', 'Unknown')
         if group_name not in groups:
@@ -373,50 +292,7 @@ async def cgk_handler(client, query):
     
     await retry_on_flood(
         query.edit_message_reply_markup,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
-    
-    await query.answer()
-
-@Bot.on_callback_query(filters.regex("^sgk"))
-async def sgk_handler(client, query):
-    """Display chapters from a specific scanlation group"""
-    if query.data not in pagination:
-        return await query.answer("⌛ This button has expired, please search again", show_alert=True)
-
-    reply = query.message.reply_to_message
-    if reply and reply.from_user.id != query.from_user.id:
-        return await query.answer("❌ This action is not for you", show_alert=True)
-
-    chapters, webs, page, rcallback_data, jcallback_back = pagination[query.data]
-    chapters = list(reversed(chapters)) 
-    
-    # Build chapter buttons
-    buttons = []
-    for chapter in chapters:
-        c = f"pic|{hash(chapter['url'])}"
-        chaptersList[c] = (webs, chapter)
-        btn_text = f"Ch. {chapter['title']}" if chapter['title'].isdigit() else chapter['title']
-        buttons.append(InlineKeyboardButton(btn_text, callback_data=c))
-
-    # Split buttons into rows
-    buttons = split_list(buttons[:60])
-    
-    # Add full page button
-    full_callback = f"full:{webs.sf}:{hash(chapters[0]['url'])}"
-    pagination[full_callback] = (chapters, webs)
-    buttons.append([InlineKeyboardButton("📖 All Chapters in Group", callback_data=full_callback)])
-    
-    # Add navigation buttons
-    buttons.append([
-        InlineKeyboardButton("🔙 Back to Groups", callback_data=jcallback_back),
-        InlineKeyboardButton("↩️ Back to All", callback_data=rcallback_data)
-    ])
-    
-    await retry_on_flood(
-        query.edit_message_reply_markup,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+        reply_markup=InlineKeyboardMarkup(buttons))
     
     await query.answer()
 
@@ -526,8 +402,7 @@ async def subs_handler(client, query):
 
     await retry_on_flood(
         query.edit_message_reply_markup,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+        reply_markup=InlineKeyboardMarkup(buttons))
 
 # ========================
 # PICTURE DOWNLOAD HANDLERS
@@ -560,8 +435,7 @@ async def pic_handler(client, query):
     # Send initial status message
     status_msg = await retry_on_flood(
         query.message.reply_text,
-        "<i>⏳ Adding to download queue...</i>"
-    )
+        "<i>⏳ Adding to download queue...</i>")
 
     # Prepare caption
     caption = f"""
@@ -582,8 +456,7 @@ async def pic_handler(client, query):
     await retry_on_flood(
         status_msg.edit,
         caption,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+        reply_markup=InlineKeyboardMarkup(buttons))
 
 # ========================
 # TASK MANAGEMENT HANDLERS
@@ -597,15 +470,13 @@ async def cl_handler(client, query):
     if await queue.delete_task(task_id):
         await retry_on_flood(
             query.message.edit_text,
-            "<b>❌ Download Cancelled</b>"
-        )
+            "<b>❌ Download Cancelled</b>")
         await query.answer("Download cancelled", show_alert=True)
     else:
         await retry_on_flood(
             query.answer,
             "Task not found or already completed",
-            show_alert=True
-        )
+            show_alert=True)
 
 # ========================
 # NAVIGATION HANDLERS
@@ -672,14 +543,12 @@ async def bk_handler(client, query):
             logger.error(f"Search error: {e}")
             return await query.message.edit_text(
                 "<b>❌ Error fetching results</b>",
-                reply_markup=query.message.reply_markup
-            )
+                reply_markup=query.message.reply_markup)
 
         if not results:
             return await query.message.edit_text(
                 "<b>❌ No results found</b>",
-                reply_markup=query.message.reply_markup
-            )
+                reply_markup=query.message.reply_markup)
 
         # Build results buttons
         buttons = []
@@ -696,8 +565,7 @@ async def bk_handler(client, query):
         await retry_on_flood(
             query.edit_message_text,
             "<b>📚 Select Manga</b>",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+            reply_markup=InlineKeyboardMarkup(buttons))
 
 # ========================
 # UPDATES HANDLER
@@ -714,8 +582,7 @@ async def updates_handler(_, query):
 
     await retry_on_flood(
         query.edit_message_text,
-        "<i>🔄 Fetching latest updates...</i>"
-    )
+        "<i>🔄 Fetching latest updates...</i>")
 
     try:
         results = await webs.get_updates()
@@ -744,8 +611,7 @@ async def updates_handler(_, query):
         await retry_on_flood(
             query.edit_message_text,
             "<b>🆕 Latest Updates</b>",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+            reply_markup=InlineKeyboardMarkup(buttons))
         
         await query.answer()
     except Exception as e:
@@ -788,16 +654,14 @@ async def cb_handler(client, query):
 
             await retry_on_flood(
                 query.edit_message_text,
-                "<i>🔍 Searching...</i>"
-            )
+                "<i>🔍 Searching...</i>")
 
             try:
                 results = await webs.search(search)
                 if not results:
                     return await query.message.edit_text(
                         "<b>❌ No results found</b>",
-                        reply_markup=query.message.reply_markup
-                    )
+                        reply_markup=query.message.reply_markup)
 
                 # Prepare buttons
                 buttons = []
@@ -814,8 +678,7 @@ async def cb_handler(client, query):
                 await retry_on_flood(
                     query.edit_message_text,
                     "<b>📚 Select Manga</b>",
-                    reply_markup=InlineKeyboardMarkup(buttons)
-                )
+                    reply_markup=InlineKeyboardMarkup(buttons))
                 
                 await query.answer()
                 return
@@ -823,8 +686,7 @@ async def cb_handler(client, query):
                 logger.error(f"Search error: {e}")
                 return await query.message.edit_text(
                     "<b>❌ Error fetching results</b>",
-                    reply_markup=query.message.reply_markup
-                )
+                    reply_markup=query.message.reply_markup)
 
     await query.answer('⌛ This button has expired, please search again', show_alert=True)
 
@@ -932,8 +794,7 @@ async def main_user_panel(_, query):
     try:
         await query.edit_message_caption(
             txt,
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+            reply_markup=InlineKeyboardMarkup(buttons))
     except FloodWait as e:
         await asyncio.sleep(e.value)
         await query.edit_message_caption(
@@ -977,8 +838,7 @@ async def file_name_handler(_, query):
         # Show current settings
         await retry_on_flood(
             query.edit_message_reply_markup,
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+            reply_markup=InlineKeyboardMarkup(buttons))
     
     elif query.data == "ufn_change":
         # Change file name pattern
@@ -1102,8 +962,7 @@ async def caption_handler(_, query):
         # Show current settings
         await retry_on_flood(
             query.edit_message_reply_markup,
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+            reply_markup=InlineKeyboardMarkup(buttons))
     
     elif query.data == "ucp_change":
         # Change caption pattern
@@ -1202,8 +1061,7 @@ async def thumb_handler(_, query):
 
 {info_text}
 <i>Select an option below:</i>""",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+            reply_markup=InlineKeyboardMarkup(buttons))
     
     elif query.data == "uth_constant":
         # Set to use manga posters
@@ -1299,8 +1157,7 @@ async def banner_handler(_, query):
         # Show current settings
         await retry_on_flood(
             query.edit_message_reply_markup,
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+            reply_markup=InlineKeyboardMarkup(buttons))
     
     elif query.data.startswith("ubn_set"):
         # Set banner image
@@ -1392,8 +1249,7 @@ async def dump_handler(_, query):
         # Show current settings
         await retry_on_flood(
             query.edit_message_reply_markup,
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+            reply_markup=InlineKeyboardMarkup(buttons))
     
     elif query.data == "udc_change":
         # Change dump channel
@@ -1487,8 +1343,7 @@ async def type_handler(_, query):
         # Show current settings
         await retry_on_flood(
             query.edit_message_reply_markup,
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+            reply_markup=InlineKeyboardMarkup(buttons))
     
     elif query.data.endswith("_pdf"):
         # Toggle PDF
@@ -1549,8 +1404,7 @@ async def megre_handler(_, query):
         # Show current settings
         await retry_on_flood(
             query.edit_message_reply_markup,
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+            reply_markup=InlineKeyboardMarkup(buttons))
     
     elif query.data == "umegre_change":
         # Change merge size
@@ -1631,8 +1485,7 @@ async def password_handler(_, query):
         # Show current settings
         await retry_on_flood(
             query.edit_message_reply_markup,
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+            reply_markup=InlineKeyboardMarkup(buttons))
     
     elif query.data == "upass_change":
         # Change password
@@ -1713,8 +1566,7 @@ async def regex_handler(_, query):
         # Show current settings
         await retry_on_flood(
             query.edit_message_reply_markup,
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+            reply_markup=InlineKeyboardMarkup(buttons))
     
     elif query.data.startswith("uregex_set"):
         # Set regex pattern
@@ -1747,7 +1599,6 @@ async def extra_handler(client, query):
     try:
         await query.answer(
             "⌛ This button has expired, please try your search again",
-            show_alert=True
-        )
+            show_alert=True)
     except Exception:
         pass
