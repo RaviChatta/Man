@@ -233,6 +233,7 @@ async def help(client, message):
         )
         await asyncio.sleep(180)  # Auto-delete after 3 minutes
         await m.delete()
+
 @Bot.on_message(filters.command("stats"))
 async def show_ping(_, message):
     if Vars.IS_PRIVATE and message.chat.id not in Vars.ADMINS:
