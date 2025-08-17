@@ -110,6 +110,8 @@ async def ch_handler(client, query):
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="bk.p")]
                 ])
+            )
+
         except Exception as e:
             logger.error(f"Error handling expired button: {e}")
         return await query.answer("⌛ This button has expired, please search again", show_alert=True)
