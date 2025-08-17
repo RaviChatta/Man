@@ -87,6 +87,7 @@ async def premuim_handler(_, query):
 # MANGA/CHAPTER HANDLERS
 # ========================
 
+
 @Bot.on_callback_query(filters.regex("^chs"))
 async def ch_handler(client, query):
     """Handle chapter selection"""
@@ -101,6 +102,16 @@ async def ch_handler(client, query):
     try:
         webs, data = searchs[query.data]
     except KeyError:
+        # Handle expired button more gracefully
+        try:
+            await query.edit_message_text(
+                "⌛ This button has expired\n\n"
+                f"Please search again: /search {reply.text.split(' ', 1)[-1] if reply.text.startswith('/search') else ''}",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="bk.p")]
+                ])
+        except Exception as e:
+            logger.error(f"Error handling expired button: {e}")
         return await query.answer("⌛ This button has expired, please search again", show_alert=True)
 
     try:
