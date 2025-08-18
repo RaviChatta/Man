@@ -1,161 +1,163 @@
 from pymongo import MongoClient
-from bot import Vars, Bot
+from pymongo.errors import PyMongoError
+from typing import Optional, List, Dict, Union
 import time
+from bot import Vars, Bot
 
-client = MongoClient(Vars.DB_URL)
-db = client[Vars.DB_NAME]
+class Database:
+    def __init__(self):
+        self.client = MongoClient(Vars.DB_URL)
+        self.db = self.client[Vars.DB_NAME]
+        self.subs = self.db["subs"]
+        self.users = self.db["users"]
+        self.premium = self.db['premium']
+        
+        # Initialize collections if they don't exist
+        self._initialize_collections()
+    
+    def _initialize_collections(self):
+        """Ensure required documents exist in collections"""
+        try:
+            if not self.subs.find_one({"_id": "data"}):
+                self.subs.insert_one({"_id": "data"})
+            
+            if not self.users.find_one({"_id": Vars.DB_NAME}):
+                self.users.insert_one({"_id": Vars.DB_NAME})
+        except PyMongoError as e:
+            print(f"Error initializing collections: {e}")
 
-subs = db["subs"]
-users = db["users"]
-acollection = db['premium']
-files = db["files"]  # NEW collection for Telegram files
+    async def add_premium(self, user_id: int, time_limit_days: int) -> bool:
+        """Add premium status to a user with expiration"""
+        try:
+            expiration_timestamp = int(time.time()) + time_limit_days * 24 * 60 * 60
+            premium_data = {
+                "user_id": user_id,
+                "expiration_timestamp": expiration_timestamp,
+                "added_at": int(time.time())
+            }
+            
+            # Update if exists, insert if not
+            result = self.premium.update_one(
+                {"user_id": user_id},
+                {"$set": premium_data},
+                upsert=True
+            )
+            return result.acknowledged
+        except PyMongoError as e:
+            print(f"Error adding premium: {e}")
+            return False
 
-uts = users.find_one({"_id": Vars.DB_NAME})
-dts = subs.find_one({"_id": "data"})
+    async def remove_premium(self, user_id: int) -> bool:
+        """Remove premium status from a user"""
+        try:
+            result = self.premium.delete_one({"user_id": user_id})
+            return result.deleted_count > 0
+        except PyMongoError as e:
+            print(f"Error removing premium: {e}")
+            return False
 
-if not dts:
-    dts = {'_id': "data"}
-    subs.insert_one(dts)
+    async def remove_expired_users(self) -> int:
+        """Remove expired premium users and return count removed"""
+        try:
+            current_timestamp = int(time.time())
+            result = self.premium.delete_many(
+                {"expiration_timestamp": {"$lte": current_timestamp}}
+            )
+            return result.deleted_count
+        except PyMongoError as e:
+            print(f"Error removing expired users: {e}")
+            return 0
 
-if not uts:
-    uts = {'_id': Vars.DB_NAME}
-    users.insert_one(uts)
+    async def is_premium(self, user_id: int) -> bool:
+        """Check if user has active premium"""
+        try:
+            current_timestamp = int(time.time())
+            user = self.premium.find_one({
+                "user_id": user_id,
+                "expiration_timestamp": {"$gt": current_timestamp}
+            })
+            return user is not None
+        except PyMongoError as e:
+            print(f"Error checking premium status: {e}")
+            return False
 
-# -------------------- PREMIUM USERS --------------------
+    def get_users(self) -> List[int]:
+        """Get all user IDs from database"""
+        try:
+            users_id = []
+            for doc in self.users.find():
+                for key in doc:
+                    if key != "_id":  # Skip the _id field
+                        try:
+                            users_id.append(int(key))
+                        except (ValueError, TypeError):
+                            continue
+            return users_id
+        except PyMongoError as e:
+            print(f"Error getting users: {e}")
+            return []
 
-async def add_premium(user_id, time_limit_days):
-    expiration_timestamp = int(time.time()) + time_limit_days * 24 * 60 * 60
-    premium_data = {
-        "user_id": user_id,
-        "expiration_timestamp": expiration_timestamp,
-    }
-    acollection.insert_one(premium_data)
+    def add_sub(self, user_id: Union[int, str], manga_url: str, chapter: Optional[str] = None) -> bool:
+        """Add a subscription for a user"""
+        try:
+            user_id = str(user_id)
+            
+            # Update subs collection
+            subs_update = {
+                "$addToSet": {f"{manga_url}.users": user_id}
+            }
+            self.subs.update_one({"_id": "data"}, subs_update, upsert=True)
+            
+            # Update users collection
+            users_update = {
+                "$addToSet": {f"{user_id}.subs": manga_url}
+            }
+            self.users.update_one({"_id": Vars.DB_NAME}, users_update, upsert=True)
+            
+            return True
+        except PyMongoError as e:
+            print(f"Error adding subscription: {e}")
+            return False
 
-async def remove_premium(user_id):
-    acollection.delete_one({"user_id": user_id})
+    def get_subs(self, user_id: Union[int, str], manga_url: Optional[str] = None) -> Union[bool, List[str], None]:
+        """Get subscriptions for a user or check specific subscription"""
+        try:
+            user_id = str(user_id)
+            user_data = self.users.find_one({"_id": Vars.DB_NAME})
+            
+            if not user_data or user_id not in user_data:
+                return None if manga_url else []
+            
+            user_subs = user_data.get(user_id, {}).get("subs", [])
+            
+            if manga_url:
+                return manga_url in user_subs
+            return user_subs
+        except PyMongoError as e:
+            print(f"Error getting subscriptions: {e}")
+            return None if manga_url else []
 
-async def remove_expired_users():
-    current_timestamp = int(time.time())
-    expired_users = acollection.find({"expiration_timestamp": {"$lte": current_timestamp}})
-    for expired_user in expired_users:
-        user_id = expired_user["user_id"]
-        acollection.delete_one({"user_id": user_id})
+    def delete_sub(self, user_id: Union[int, str], manga_url: str) -> bool:
+        """Delete a subscription for a user"""
+        try:
+            user_id = str(user_id)
+            
+            # Remove from subs collection
+            self.subs.update_one(
+                {"_id": "data"},
+                {"$pull": {f"{manga_url}.users": user_id}}
+            )
+            
+            # Remove from users collection
+            self.users.update_one(
+                {"_id": Vars.DB_NAME},
+                {"$pull": {f"{user_id}.subs": manga_url}}
+            )
+            
+            return True
+        except PyMongoError as e:
+            print(f"Error deleting subscription: {e}")
+            return False
 
-async def premium_user(user_id):
-    user = acollection.find_one({"user_id": user_id})
-    return user is not None
-
-# -------------------- USERS & SUBSCRIPTIONS --------------------
-
-def sync(name="data", type="dts"):
-    if type == "dts":
-        subs.replace_one({'_id': name}, dts)
-    elif type == "uts":
-        users.replace_one({'_id': name}, uts)
-
-def get_users():
-    users_id = []
-    for i in users.find():
-        for j in i:
-            try:
-                users_id.append(int(j))
-            except:
-                continue
-    return users_id
-
-def add_sub(user_id, manga_url: str, chapter=None):
-    user_id = str(user_id)
-    if manga_url not in dts:
-        dts[manga_url] = {}
-        sync()
-
-    if "users" not in dts[manga_url]:
-        dts[manga_url]["users"] = []
-        sync()
-
-    if user_id not in dts[manga_url]["users"]:
-        dts[manga_url]["users"].append(user_id)
-        sync()
-
-    if user_id not in uts:
-        uts[user_id] = {}
-        sync(Vars.DB_NAME, 'uts')
-
-    if "subs" not in uts[user_id]:
-        uts[user_id]["subs"] = []
-        sync(Vars.DB_NAME, 'uts')
-
-    if manga_url not in uts[user_id]["subs"]:
-        uts[user_id]["subs"].append(manga_url)
-        sync(Vars.DB_NAME, 'uts')
-
-    sync()
-    sync(Vars.DB_NAME, 'uts')
-
-def get_subs(user_id, manga_url: str = None):
-    user_id = str(user_id)
-    if user_id not in uts:
-        uts[user_id] = {}
-        sync(Vars.DB_NAME, 'uts')
-
-    if "subs" not in uts[user_id]:
-        uts[user_id]["subs"] = []
-        sync(Vars.DB_NAME, 'uts')
-
-    if manga_url:
-        if user_id in uts:
-            if manga_url in uts[user_id]["subs"]:
-                return True
-            else:
-                return None
-
-    if user_id in uts:
-        if "subs" not in uts[user_id]:
-            uts[user_id]["subs"] = []
-            sync(Vars.DB_NAME, 'uts')
-
-        return uts[user_id]["subs"]
-
-def delete_sub(user_id, manga_url: str):
-    user_id = str(user_id)
-    if manga_url in dts and user_id in dts[manga_url]["users"]:
-        dts[manga_url]["users"].remove(user_id)
-        sync()
-
-    if user_id in uts and manga_url in uts[user_id]["subs"]:
-        uts[user_id]["subs"].remove(manga_url)
-        sync(Vars.DB_NAME, 'uts')
-
-    sync()
-    sync(Vars.DB_NAME, 'uts')
-
-# -------------------- FILE STORAGE (FIX FOR FILE_REFERENCE_EXPIRED) --------------------
-
-async def add_file(user_id, message):
-    """Save a file (doc, photo, video, etc.) with chat_id & message_id"""
-    file_data = {
-        "user_id": user_id,
-        "chat_id": message.chat.id,
-        "message_id": message.id,
-        "file_id": (
-            message.document.file_id if message.document else
-            message.photo.file_id if message.photo else
-            message.video.file_id if message.video else None
-        ),
-        "file_type": (
-            "document" if message.document else
-            "photo" if message.photo else
-            "video" if message.video else "unknown"
-        ),
-        "timestamp": int(time.time())
-    }
-    files.update_one({"user_id": user_id}, {"$set": file_data}, upsert=True)
-
-async def get_file(app, user_id):
-    """Fetch file again with fresh file_reference"""
-    data = files.find_one({"user_id": user_id})
-    if not data:
-        return None
-
-    msg = await app.get_messages(data["chat_id"], data["message_id"])
-    return msg
+# Initialize database instance
+db = Database()
