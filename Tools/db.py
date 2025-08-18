@@ -4,9 +4,11 @@ import time
 
 client = MongoClient(Vars.DB_URL)
 db = client[Vars.DB_NAME]
+
 subs = db["subs"]
 users = db["users"]
 acollection = db['premium']
+files = db["files"]  # NEW collection for Telegram files
 
 uts = users.find_one({"_id": Vars.DB_NAME})
 dts = subs.find_one({"_id": "data"})
@@ -18,6 +20,8 @@ if not dts:
 if not uts:
     uts = {'_id': Vars.DB_NAME}
     users.insert_one(uts)
+
+# -------------------- PREMIUM USERS --------------------
 
 async def add_premium(user_id, time_limit_days):
     expiration_timestamp = int(time.time()) + time_limit_days * 24 * 60 * 60
@@ -32,7 +36,6 @@ async def remove_premium(user_id):
 
 async def remove_expired_users():
     current_timestamp = int(time.time())
-    # Find and delete expired users
     expired_users = acollection.find({"expiration_timestamp": {"$lte": current_timestamp}})
     for expired_user in expired_users:
         user_id = expired_user["user_id"]
@@ -41,6 +44,8 @@ async def remove_expired_users():
 async def premium_user(user_id):
     user = acollection.find_one({"user_id": user_id})
     return user is not None
+
+# -------------------- USERS & SUBSCRIPTIONS --------------------
 
 def sync(name="data", type="dts"):
     if type == "dts":
@@ -52,11 +57,10 @@ def get_users():
     users_id = []
     for i in users.find():
         for j in i:
-            try: 
+            try:
                 users_id.append(int(j))
-            except: 
+            except:
                 continue
-
     return users_id
 
 def add_sub(user_id, manga_url: str, chapter=None):
@@ -124,3 +128,34 @@ def delete_sub(user_id, manga_url: str):
 
     sync()
     sync(Vars.DB_NAME, 'uts')
+
+# -------------------- FILE STORAGE (FIX FOR FILE_REFERENCE_EXPIRED) --------------------
+
+async def add_file(user_id, message):
+    """Save a file (doc, photo, video, etc.) with chat_id & message_id"""
+    file_data = {
+        "user_id": user_id,
+        "chat_id": message.chat.id,
+        "message_id": message.id,
+        "file_id": (
+            message.document.file_id if message.document else
+            message.photo.file_id if message.photo else
+            message.video.file_id if message.video else None
+        ),
+        "file_type": (
+            "document" if message.document else
+            "photo" if message.photo else
+            "video" if message.video else "unknown"
+        ),
+        "timestamp": int(time.time())
+    }
+    files.update_one({"user_id": user_id}, {"$set": file_data}, upsert=True)
+
+async def get_file(app, user_id):
+    """Fetch file again with fresh file_reference"""
+    data = files.find_one({"user_id": user_id})
+    if not data:
+        return None
+
+    msg = await app.get_messages(data["chat_id"], data["message_id"])
+    return msg
