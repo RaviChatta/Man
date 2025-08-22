@@ -180,7 +180,7 @@ async def start(client, message):
             "<blockquote>"
             "The most advanced manga downloader on Telegram\n"
             "Download entire series or single chapters with ease"
-            "</blockquote>"
+            "</blockquote>\n"
             "🔹 <b>Quick Start:</b>\n"
             "<blockquote>Just type the name of any manga to begin</blockquote>\n\n"
             "📌 <b>Example:</b>\n"
