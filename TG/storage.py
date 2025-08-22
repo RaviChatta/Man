@@ -56,7 +56,7 @@ web_data = {
     " Mgeko ": MgekoWebs(),
     " Manga18fx ": Manga18fxWebs(),
     " Manhwa18 ":  Manhwa18Webs(),
-    "NHentai": NHentaiWebs(),  # This should have bg=False in its class
+    "NHentai": NHentaiWebs(),  # ← Correct spelling
 #    "Bato.to": BatoWebs(),  # ← Add this line for Bato
     "Toonily": ToonilyScraper(),  # Add this line
 
