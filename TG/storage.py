@@ -58,7 +58,7 @@ web_data = {
     " Manhwa18 ":  Manhwa18Webs(),
     "NHentai": NHentaiWebs(),  # This should have bg=False in its class
 #    "Bato.to": BatoWebs(),  # ← Add this line for Bato
-    "Toonily": ToonilyScraper(),  # Add Toonily here
+    "Toonily": ToonilyScraper(),  # Add this line
 
 
 }
