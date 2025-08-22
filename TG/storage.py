@@ -22,22 +22,26 @@ queueList = dict()
 pagination = dict()
 subscribes = dict()
 
+
 users_txt = """
-<b>Welcome to the User Panel ! </b>
-
-<b>=> Your ID: <code>{id}</code></b>
-<b>=> File Name: <code>{file_name}</code><code>[{len}]</code></b>
-<b>=> Caption: <code>{caption}</code></b>
-<b>=> Thumbnail: <code>{thumb}</code></b>
-<b>=> File Type: <code>{type}</code></b>
-<b>=> PDF Password: <code>{password}</code></b>
-<b>=> Megre Size: <code>{megre}</code></b>
-<b>=> Regex/Zfill: <code>{regex}</code></b>
-<b>=> Banner 1: <code>{banner1}</code></b>
-<b>=> Banner 2: <code>{banner2}</code></b>
-<b>=> Dump Channel: <code>{dump}</code></b>
+<b>⚙️ <u>User Settings Panel</u></b>
+<blockquote>
+<b>🆔 User ID:</b> <code>{id}</code>
+<b>📝 File Name:</b> <code>{file_name}</code>
+<b>📝 File Name Length:</b> <code>{len}</code>
+<b>📋 Caption:</b> <code>{caption}</code>
+<b>🖼 Thumbnail:</b> <code>{thumb}</code>
+<b>📡 Dump Channel:</b> <code>{dump}</code>
+<b>📦 File Type:</b> <code>{type}</code>
+<b>🔢 Merge Size:</b> <code>{megre}</code>
+<b>🔍 Regex:</b> <code>{regex}</code>
+<b>🔐 Password:</b> <code>{password}</code></blockquote>
+<b>📌 Banners:</b>
+<blockquote>
+<b>1:</b> <code>{banner1}</code>
+<b>2:</b> <code>{banner2}</code>
+</blockquote>
 """
-
 web_data = {
     " Comick ": ComickWebs(),
     #" MangaMob ": MangaMobWebs(),
