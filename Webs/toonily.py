@@ -3,6 +3,10 @@ import json
 from bs4 import BeautifulSoup
 from loguru import logger
 import re
+import aiohttp
+from PIL import Image
+import io
+import imghdr
 
 
 class ToonilyScraper(Scraper):
@@ -14,6 +18,7 @@ class ToonilyScraper(Scraper):
         self.headers = {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://toonily.com/",
         }
         self.search_query = dict()
     
@@ -186,9 +191,58 @@ class ToonilyScraper(Scraper):
         
         if reading_content:
             img_elements = reading_content.find_all("img")
-            images = [img["src"].strip() for img in img_elements if img.get("src")]
+            for img in img_elements:
+                if img.get("src"):
+                    img_url = img["src"].strip()
+                    # Skip placeholder/default images
+                    if any(placeholder in img_url.lower() for placeholder in ["default", "placeholder", "logo", "icon"]):
+                        continue
+                    # Validate the image before adding
+                    if await self.validate_image(img_url):
+                        images.append(img_url)
+        
+        # If no valid images found, try alternative selectors
+        if not images:
+            # Try finding images in different ways
+            all_images = soup.find_all("img")
+            for img in all_images:
+                if img.get("src"):
+                    img_url = img["src"].strip()
+                    # Look for images that might be chapter content
+                    if ("chapter" in img_url.lower() or "wp-content" in img_url) and not any(placeholder in img_url.lower() for placeholder in ["default", "placeholder"]):
+                        if await self.validate_image(img_url):
+                            images.append(img_url)
         
         return images
+    
+    async def validate_image(self, image_url):
+        """Validate if the image is a real image file and not a placeholder"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_url, headers=self.headers) as response:
+                    if response.status == 200:
+                        content = await response.read()
+                        
+                        # Check if it's a placeholder by file size
+                        if len(content) < 2048:  # Less than 2KB is likely a placeholder
+                            return False
+                        
+                        # Check if it's a valid image format
+                        try:
+                            # Try to detect image format
+                            image_format = imghdr.what(None, h=content)
+                            if image_format is None:
+                                # Try with PIL as fallback
+                                img = Image.open(io.BytesIO(content))
+                                img.verify()
+                            return True
+                        except Exception as e:
+                            logger.warning(f"Invalid image format for {image_url}: {e}")
+                            return False
+            return False
+        except Exception as e:
+            logger.warning(f"Error validating image {image_url}: {e}")
+            return False
     
     async def get_updates(self, page: int = 1):
         output = []
