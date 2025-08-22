@@ -56,6 +56,9 @@ web_data = {
     " Mgeko ": MgekoWebs(),
     " Manga18fx ": Manga18fxWebs(),
     " Manhwa18 ":  Manhwa18Webs(),
+    "NHentai": NHentaiWebs(),  # ← This will work the same way
+    
+
 }
 
 plugins_name = " ".join(web_data[i].sf for i in web_data.keys())
