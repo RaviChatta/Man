@@ -11,7 +11,7 @@ class NHentaiWebs(Scraper):
     def __init__(self):
         super().__init__()
         self.url = "https://nhentai.net/"
-        self.bg = False  # Not suitable for background updates (NSFW content)
+        self.bg = False
         self.sf = "nh"
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -28,6 +28,10 @@ class NHentaiWebs(Scraper):
         }
 
     async def search(self, query: str = ""):
+        if not query.strip():
+            # If empty query, show popular
+            return await self.get_updates()
+            
         url = f"https://nhentai.net/search/?q={quote_plus(query)}"
         results = await self.get(url, headers=self.headers, cs=True)
         
@@ -35,28 +39,68 @@ class NHentaiWebs(Scraper):
             return []
             
         bs = BeautifulSoup(results, "html.parser")
-        container = bs.find_all("div", class_="gallery")
+        
+        # Try multiple selectors for gallery containers
+        containers = [
+            bs.find("div", class_="container"),
+            bs.find("div", class_="index-container"),
+            bs.find("div", class_="gallery"),
+            bs.find("div", id="content")
+        ]
+        
+        container = None
+        for c in containers:
+            if c:
+                container = c
+                break
+        else:
+            container = bs
+        
+        # Find galleries using multiple selectors
+        galleries = container.find_all("div", class_=lambda x: x and "gallery" in str(x).lower())
+        if not galleries:
+            galleries = container.find_all("div", class_=lambda x: x and "container" in str(x).lower())
+        if not galleries:
+            galleries = container.find_all("a", href=re.compile(r'/g/\d+/'))
         
         results_list = []
-        for gallery in container:
+        for gallery in galleries[:20]:  # Limit to 20 results
             try:
                 data = {}
-                # Get the link
-                link = gallery.find("a", class_="cover")
+                
+                # Get link
+                if gallery.name == "a":
+                    link = gallery
+                else:
+                    link = gallery.find("a")
+                
+                if not link or not link.get('href'):
+                    continue
+                    
                 data['url'] = urljoin(self.url, link.get('href').strip())
                 
-                # Get the thumbnail
-                img = link.find("img")
-                data['poster'] = img.get('data-src') or img.get('src')
+                # Get image
+                img = gallery.find("img") or link.find("img")
+                if img:
+                    data['poster'] = img.get('data-src') or img.get('src')
+                    if data['poster'] and not data['poster'].startswith(('http', '//')):
+                        data['poster'] = urljoin(self.url, data['poster'])
                 
-                # Get the title
-                title_elem = gallery.find("div", class_="caption")
-                data['title'] = title_elem.text.strip() if title_elem else "Unknown Title"
+                # Get title
+                title_elem = gallery.find("div", class_="caption") or gallery.find("h3") or gallery.find("h2")
+                if title_elem:
+                    data['title'] = title_elem.text.strip()
+                else:
+                    # Extract from URL as fallback
+                    title_from_url = data['url'].split('/')[-2].replace('-', ' ').title()
+                    data['title'] = title_from_url
                 
-                # Get the ID from URL
-                data['id'] = data['url'].split("/")[-2]  # URL format: /g/123456/
+                # Get ID from URL
+                data['id'] = data['url'].split("/")[-2] if data['url'].split("/")[-2].isdigit() else data['url'].split("/")[-1]
                 
-                results_list.append(data)
+                if all(key in data for key in ['url', 'title']):
+                    results_list.append(data)
+                    
             except Exception as e:
                 logger.error(f"Error parsing nhentai search result: {e}")
                 continue
@@ -71,50 +115,64 @@ class NHentaiWebs(Scraper):
             
         bs = BeautifulSoup(content, "html.parser")
         
-        # Get description/tags
-        tags_container = bs.find("section", id="tags")
+        # Get tags
         tags = []
+        tags_container = bs.find("section", id="tags")
         if tags_container:
             for tag_group in tags_container.find_all("div", class_="tag-container"):
-                tag_type = tag_group.find("span", class_="name").text.strip()
-                tag_items = [a.text.strip() for a in tag_group.find_all("a", class_="tag")]
-                tags.append(f"{tag_type}: {', '.join(tag_items)}")
+                tag_type = tag_group.find("span", class_="name")
+                if tag_type:
+                    tag_type = tag_type.text.strip()
+                    tag_items = [a.text.strip() for a in tag_group.find_all("a", class_="tag")]
+                    tags.append(f"{tag_type}: {', '.join(tag_items)}")
         
         # Get title
-        title_elem = bs.find("h1", class_="title")
+        title_elem = bs.find("h1", class_="title") or bs.find("h1")
         title = title_elem.text.strip() if title_elem else results['title']
         
         # Get cover image
-        cover_elem = bs.find("div", id="cover")
-        cover_img = cover_elem.find("img") if cover_elem else None
-        cover_url = cover_img.get('data-src') or cover_img.get('src') if cover_img else results.get('poster', '')
+        cover_elem = bs.find("div", id="cover") or bs.find("img", id="cover")
+        if cover_elem:
+            cover_img = cover_elem.find("img") if cover_elem.name == "div" else cover_elem
+            if cover_img:
+                results['poster'] = cover_img.get('data-src') or cover_img.get('src') or results.get('poster', '')
         
         # Build message
         results['msg'] = f"<b>{title}</b>\n\n"
-        results['msg'] += f"<b>Tags:</b>\n<blockquote expandable><code>{chr(10).join(tags)}</code></blockquote>\n\n"
+        if tags:
+            results['msg'] += f"<b>Tags:</b>\n<blockquote expandable><code>{chr(10).join(tags)}</code></blockquote>\n\n"
         results['msg'] += f"<b>URL:</b> {results['url']}\n"
         
-        # Store the gallery ID for getting pictures
-        results['gallery_id'] = results['url'].split("/")[-2]
+        # Store gallery info
+        results['gallery_id'] = results['url'].split("/")[-2] if results['url'].split("/")[-2].isdigit() else results['url'].split("/")[-1]
         results['total_pages'] = self._get_total_pages(bs)
-        results['cover_url'] = cover_url
         
         return results
 
     def _get_total_pages(self, bs):
-        # Get total number of pages from the thumbnail container
-        thumbnails = bs.find("div", id="thumbnail-container")
-        if thumbnails:
-            return len(thumbnails.find_all("div", class_="thumb-container"))
+        # Try to get total pages from thumbnail container
+        thumb_container = bs.find("div", id="thumbnail-container")
+        if thumb_container:
+            return len(thumb_container.find_all("div", class_="thumb-container"))
+        
+        # Try to get from info
+        info = bs.find("div", id="info")
+        if info:
+            pages_text = info.find(text=re.compile(r'pages?', re.IGNORECASE))
+            if pages_text:
+                numbers = re.findall(r'\d+', pages_text)
+                if numbers:
+                    return int(numbers[0])
+        
         return 0
 
     def iter_chapters(self, data, page: int=1):
-        # For nhentai, we treat each gallery as a single "chapter" with multiple pages
+        # For nhentai, each gallery is treated as one "chapter"
         chapters_list = [{
             "title": f"Gallery {data.get('gallery_id', 'Unknown')} - {data.get('total_pages', 0)} pages",
             "url": data['url'],
             "manga_title": data['title'],
-            "poster": data.get('cover_url', data.get('poster', '')),
+            "poster": data.get('poster', ''),
             "gallery_id": data.get('gallery_id', ''),
             "total_pages": data.get('total_pages', 0)
         }]
@@ -122,62 +180,99 @@ class NHentaiWebs(Scraper):
         return chapters_list
 
     async def get_pictures(self, url, data=None):
-        gallery_id = url.split("/")[-2] if "/g/" in url else url.split("/")[-1]
+        # Extract gallery ID from URL
+        gallery_id = None
+        if data and 'gallery_id' in data:
+            gallery_id = data['gallery_id']
+        else:
+            # Extract from URL
+            parts = url.split('/')
+            for part in parts:
+                if part.isdigit():
+                    gallery_id = part
+                    break
         
-        # nhentai API endpoint for getting gallery info
+        if not gallery_id:
+            return []
+        
+        # Use API to get image URLs
         api_url = f"https://nhentai.net/api/gallery/{gallery_id}"
         response = await self.get(api_url, headers=self.headers, cs=True, rjson=True)
         
         if not response:
             return []
         
-        # Construct image URLs from the API response
         image_links = []
-        if 'images' in response and 'pages' in response['images']:
-            for page in response['images']['pages']:
-                # nhentai image URL format: https://i.nhentai.net/galleries/{media_id}/{page_number}.{extension}
+        try:
+            if 'images' in response and 'pages' in response['images']:
                 media_id = response['media_id']
-                page_num = page['t'] if page['t'] in ['j', 'p', 'g'] else page_num
-                extension = page['t']  # j = jpg, p = png, g = gif
-                
-                image_url = f"https://i.nhentai.net/galleries/{media_id}/{page['n']}.{extension}"
-                image_links.append(image_url)
+                for page in response['images']['pages']:
+                    # Determine file extension
+                    extension = page.get('t', 'jpg')
+                    if extension == 'j': extension = 'jpg'
+                    if extension == 'p': extension = 'png'
+                    if extension == 'g': extension = 'gif'
+                    
+                    image_url = f"https://i.nhentai.net/galleries/{media_id}/{page['n']}.{extension}"
+                    image_links.append(image_url)
+        except Exception as e:
+            logger.error(f"Error parsing nhentai API response: {e}")
         
         return image_links
 
     async def get_updates(self, page:int=1):
-        # nhentai doesn't have a traditional update system like manga sites
-        # We'll get popular or recent galleries instead
         output = []
         
-        url = f"https://nhentai.net/?page={page}"
-        results = await self.get(url, headers=self.headers, cs=True)
+        # Try different pages for updates
+        urls = [
+            f"https://nhentai.net/?page={page}",
+            f"https://nhentai.net/popular?page={page}",
+            f"https://nhentai.net/trending?page={page}"
+        ]
         
-        if not results:
-            return output
-            
-        bs = BeautifulSoup(results, "html.parser")
-        galleries = bs.find_all("div", class_="gallery")
-        
-        for gallery in galleries:
-            try:
-                data = {}
-                # Get the link
-                link = gallery.find("a", class_="cover")
-                data['url'] = urljoin(self.url, link.get('href').strip())
-                
-                # Get the title
-                title_elem = gallery.find("div", class_="caption")
-                data['manga_title'] = title_elem.text.strip() if title_elem else "Unknown Title"
-                
-                # Get the gallery ID for chapter URL
-                gallery_id = data['url'].split("/")[-2]
-                data['chapter_url'] = data['url']
-                data['title'] = f"Gallery {gallery_id}"
-                
-                output.append(data)
-            except Exception as e:
-                logger.error(f"Error parsing nhentai update: {e}")
+        for url in urls:
+            results = await self.get(url, headers=self.headers, cs=True)
+            if not results:
                 continue
+                
+            bs = BeautifulSoup(results, "html.parser")
+            
+            # Find galleries
+            galleries = bs.find_all("div", class_=lambda x: x and "gallery" in str(x).lower())
+            if not galleries:
+                galleries = bs.find_all("a", href=re.compile(r'/g/\d+/'))
+            
+            for gallery in galleries[:30]:  # Limit to 30 results
+                try:
+                    data = {}
+                    
+                    # Get link
+                    if gallery.name == "a":
+                        link = gallery
+                    else:
+                        link = gallery.find("a")
+                    
+                    if not link or not link.get('href'):
+                        continue
+                        
+                    data['url'] = urljoin(self.url, link.get('href').strip())
+                    data['manga_title'] = "Unknown Title"
+                    
+                    # Try to get title
+                    title_elem = gallery.find("div", class_="caption") or gallery.find("h3") or gallery.find("h2")
+                    if title_elem:
+                        data['manga_title'] = title_elem.text.strip()
+                    
+                    data['chapter_url'] = data['url']
+                    data['title'] = f"Gallery {data['url'].split('/')[-2]}"
+                    
+                    output.append(data)
+                    
+                except Exception as e:
+                    logger.error(f"Error parsing nhentai update: {e}")
+                    continue
+            
+            if output:
+                break
         
         return output
