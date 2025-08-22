@@ -5,6 +5,7 @@ from urllib.parse import urlparse, urljoin, quote, quote_plus
 import re
 from loguru import logger
 import asyncio
+import aiohttp
 
 
 class NHentaiWebs(Scraper):
@@ -116,9 +117,13 @@ class NHentaiWebs(Scraper):
         }
         
         # Get title
-        title_elem = bs.find("h1", class_="title") or bs.find("h2", class_="title") or bs.find("title")
+        title_elem = bs.find("h1") or bs.find("h2") or bs.find("title")
         if title_elem:
-            data['title'] = title_elem.text.strip()
+            jap_title = title_elem.find("span", class_="pretty")
+            if jap_title:
+                data['title'] = jap_title.text.strip()
+            else:
+                data['title'] = title_elem.text.strip()
         
         # Get cover image
         cover_elem = bs.find("div", id="cover")
@@ -146,16 +151,23 @@ class NHentaiWebs(Scraper):
         bs = BeautifulSoup(content, "html.parser")
         
         # Get title
-        title_elem = bs.find("h1", class_="title") or bs.find("h2", class_="title") or bs.find("title")
+        title_elem = bs.find("h1") or bs.find("h2") or bs.find("title")
         if title_elem:
-            data['title'] = title_elem.text.strip()
+            jap_title = title_elem.find("span", class_="pretty")
+            if jap_title:
+                data['title'] = jap_title.text.strip()
+            else:
+                data['title'] = title_elem.text.strip()
         
         # Get tags
         tags_section = bs.find("section", id="tags")
         tags = []
         if tags_section:
             tag_links = tags_section.find_all("a", class_="tag")
-            tags = [tag.find("span", class_="name").text.strip() for tag in tag_links if tag.find("span", class_="name")]
+            for tag in tag_links:
+                tag_name = tag.find("span", class_="name")
+                if tag_name:
+                    tags.append(tag_name.text.strip())
         
         # Get cover image
         cover_elem = bs.find("div", id="cover")
@@ -174,24 +186,43 @@ class NHentaiWebs(Scraper):
         total_pages = 0
         thumb_container = bs.find("div", id="thumbnail-container")
         if thumb_container:
-            page_links = thumb_container.find_all("a", class_="gallerythumb")
+            page_links = thumb_container.find_all("div", class_="thumb-container")
             total_pages = len(page_links)
+        
+        # Get additional info
+        info_section = bs.find("div", id="info")
+        uploaded = "N/A"
+        favorites = "0"
+        if info_section:
+            # Get upload date
+            upload_elem = info_section.find("time")
+            if upload_elem:
+                uploaded = upload_elem.text.strip()
+            
+            # Get favorites
+            fav_elem = info_section.find("span", class_="favorites")
+            if fav_elem:
+                favorites = fav_elem.text.strip().replace(',', '')
         
         # Build message
         msg = f"<b>{data['title']}</b>\n\n"
         if tags:
-            msg += f"<b>Tags:</b> <code>{', '.join(tags[:10])}</code>\n\n"
+            msg += f"<b>Tags:</b> <code>{', '.join(tags[:8])}</code>\n\n"
         msg += f"<b>Pages:</b> {total_pages}\n"
+        msg += f"<b>Uploaded:</b> {uploaded}\n"
+        msg += f"<b>Favorites:</b> {favorites}\n"
         msg += f"<b>URL:</b> {data['url']}"
         
         data['msg'] = msg
         data['total_pages'] = total_pages
         data['tags'] = tags
+        data['uploaded'] = uploaded
+        data['favorites'] = favorites
         
         return data
 
     def iter_chapters(self, data):
-        # For NHentai, each gallery is one "chapter"
+        # For NHentai, treat the entire gallery as one chapter for PDF creation
         if not data:
             return []
             
@@ -201,12 +232,14 @@ class NHentaiWebs(Scraper):
             "slug": data.get('id', ''),
             "manga_title": data.get('title', 'NHentai Gallery'),
             "poster": data.get('poster', ''),
-            "total_pages": data.get('total_pages', 0)
+            "total_pages": data.get('total_pages', 0),
+            "gallery_id": data.get('id', '')
         }]
         
         return chapters_list
 
     async def get_pictures(self, url, data=None):
+        """Get all image URLs from NHentai gallery for PDF creation"""
         content = await self.get(url, headers=self.headers, cs=True)
         if not content:
             return []
@@ -214,55 +247,101 @@ class NHentaiWebs(Scraper):
         bs = BeautifulSoup(content, "html.parser")
         image_urls = []
         
-        # Method 1: Get images from thumbnail container
-        thumb_container = bs.find("div", id="thumbnail-container")
-        if thumb_container:
-            thumb_links = thumb_container.find_all("a", class_="gallerythumb")
-            for thumb_link in thumb_links:
-                img = thumb_link.find("img")
-                if img:
-                    img_src = img.get('data-src') or img.get('src')
-                    if img_src:
-                        # Convert thumbnail URL to full image URL
-                        # Thumbnail: https://t.nhentai.net/galleries/2381456/1t.jpg
-                        # Full image: https://i.nhentai.net/galleries/2381456/1.jpg
-                        if 't.nhentai.net' in img_src:
-                            full_img_url = img_src.replace('t.nhentai.net', 'i.nhentai.net').replace('t.jpg', '.jpg').replace('t.png', '.png')
-                            image_urls.append(full_img_url)
-                        else:
-                            # Try to construct full image URL from pattern
-                            match = re.search(r'/galleries/(\d+)/(\d+)t\.', img_src)
-                            if match:
-                                gallery_id = match.group(1)
-                                page_num = match.group(2)
-                                full_img_url = f"https://i.nhentai.net/galleries/{gallery_id}/{page_num}.jpg"
-                                image_urls.append(full_img_url)
+        # Extract gallery ID from URL
+        gallery_id = url.split('/')[-2]
+        if not gallery_id.isdigit():
+            return []
         
-        # Method 2: Try to find image URLs in script tags
+        # Method 1: Get from JavaScript data (most reliable)
+        scripts = bs.find_all('script')
+        for script in scripts:
+            if script.string and 'gallery' in script.string:
+                # Look for gallery data in JavaScript
+                match = re.search(r'window\._gallery\s*=\s*JSON\.parse\(\s*\'(.+?)\'\s*\)', script.string)
+                if match:
+                    try:
+                        json_str = match.group(1).replace('\\"', '"').replace("\\'", "'")
+                        gallery_data = json.loads(json_str)
+                        media_id = gallery_data.get('media_id', '')
+                        images_data = gallery_data.get('images', {}).get('pages', [])
+                        
+                        if media_id and images_data:
+                            for i, page_data in enumerate(images_data, 1):
+                                ext = self._get_extension(page_data.get('t', 'j'))
+                                image_url = f"https://i.nhentai.net/galleries/{media_id}/{i}.{ext}"
+                                image_urls.append(image_url)
+                            break
+                    except Exception as e:
+                        logger.error(f"Error parsing gallery JSON: {e}")
+                        continue
+        
+        # Method 2: Get from thumbnail data attributes
         if not image_urls:
-            scripts = bs.find_all('script')
-            for script in scripts:
-                if script.string and 'images' in script.string:
-                    # Look for JSON data
-                    json_match = re.search(r'JSON\.parse\(\'(.+?)\'\)', script.string)
-                    if json_match:
-                        try:
-                            json_str = json_match.group(1).replace('\\"', '"').replace("\\'", "'")
-                            images_data = json.loads(json_str)
-                            if 'images' in images_data:
-                                gallery_id = images_data.get('media_id', '')
-                                pages = images_data['images'].get('pages', [])
-                                for i, page in enumerate(pages, 1):
-                                    ext = page.get('t', 'jpg')
-                                    if ext == 'j': ext = 'jpg'
-                                    elif ext == 'p': ext = 'png'
-                                    elif ext == 'g': ext = 'gif'
-                                    image_url = f"https://i.nhentai.net/galleries/{gallery_id}/{i}.{ext}"
-                                    image_urls.append(image_url)
-                        except:
-                            pass
+            thumb_container = bs.find("div", id="thumbnail-container")
+            if thumb_container:
+                thumb_links = thumb_container.find_all("a", class_="gallerythumb")
+                for thumb_link in thumb_links:
+                    img = thumb_link.find("img")
+                    if img:
+                        data_src = img.get('data-src')
+                        if data_src:
+                            # Convert thumbnail URL to full image URL
+                            # Example: https://t.nhentai.net/galleries/2381456/1t.jpg -> https://i.nhentai.net/galleries/2381456/1.jpg
+                            if 't.nhentai.net' in data_src:
+                                full_url = data_src.replace('t.nhentai.net', 'i.nhentai.net')
+                                full_url = re.sub(r'(\d+)t\.(jpg|png|gif|webp)', r'\1.\2', full_url)
+                                image_urls.append(full_url)
         
-        return list(dict.fromkeys(image_urls))  # Remove duplicates while preserving order
+        # Method 3: Construct URLs directly using gallery ID
+        if not image_urls:
+            # Try to get total pages
+            total_pages_elem = bs.find("span", class_="num-pages")
+            if total_pages_elem:
+                total_pages = int(total_pages_elem.text.strip())
+            else:
+                total_pages = data.get('total_pages', 0) if data else 0
+            
+            if total_pages > 0:
+                # Try different extensions for each page
+                for page_num in range(1, total_pages + 1):
+                    extensions = ['jpg', 'png', 'gif', 'webp']
+                    for ext in extensions:
+                        test_url = f"https://i.nhentai.net/galleries/{gallery_id}/{page_num}.{ext}"
+                        if await self._validate_image_url(test_url):
+                            image_urls.append(test_url)
+                            break
+        
+        # Remove duplicates and ensure proper order
+        unique_urls = []
+        seen_urls = set()
+        for url in image_urls:
+            if url not in seen_urls:
+                unique_urls.append(url)
+                seen_urls.add(url)
+        
+        # Sort by page number
+        unique_urls.sort(key=lambda x: int(re.search(r'/(\d+)\.(jpg|png|gif|webp)', x).group(1)) if re.search(r'/(\d+)\.(jpg|png|gif|webp)', x) else 0)
+        
+        return unique_urls
+
+    def _get_extension(self, format_code):
+        """Convert NHentai format code to file extension"""
+        extension_map = {
+            'j': 'jpg',
+            'p': 'png',
+            'g': 'gif',
+            'w': 'webp'
+        }
+        return extension_map.get(format_code, 'jpg')
+
+    async def _validate_image_url(self, url):
+        """Check if an image URL exists"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.head(url, headers=self.headers, timeout=5) as response:
+                    return response.status == 200
+        except:
+            return False
 
     async def get_updates(self, page: int = 1):
         # NHentai front page as updates
