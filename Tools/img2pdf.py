@@ -23,6 +23,8 @@ from asyncio import to_thread
 import asyncio
 
 import PyPDF2
+import io
+import imghdr
 
 def thumbnali_images(image_url, download_dir, quality=80, file_name="thumb.jpg"):
     if not os.path.exists(download_dir):
@@ -54,12 +56,38 @@ async def download_through_cloudscrapper(image_url, download_dir, quality=90):
                 with open(img_path, 'wb') as img_file:
                     img_file.write(image_response.content)
                     try:
+                        # Convert any image format to JPEG
                         with Image.open(img_path) as img:
-                            img = img.convert("RGB")
+                            # Convert to RGB if necessary
+                            if img.mode in ('RGBA', 'LA', 'P'):
+                                img = img.convert("RGB")
                             img.save(img_path, "JPEG", quality=quality, optimize=True)
                             
+                    except UnidentifiedImageError:
+                        # Try to handle corrupted images
+                        logger.warning(f"Corrupted image detected: {img_path}, trying to recover")
+                        try:
+                            # Try to read the file and check if it's actually an image
+                            with open(img_path, 'rb') as f:
+                                content = f.read()
+                                # Check if it has a valid image header
+                                if imghdr.what(None, h=content) is not None:
+                                    # Try to force open as JPEG
+                                    img = Image.open(io.BytesIO(content))
+                                    if img.mode in ('RGBA', 'LA', 'P'):
+                                        img = img.convert("RGB")
+                                    img.save(img_path, "JPEG", quality=quality, optimize=True)
+                                else:
+                                    os.remove(img_path)
+                                    continue
+                        except Exception as e:
+                            logger.exception(f"Error recovering image: {e}")
+                            os.remove(img_path)
+                            continue
                     except Exception as e:
                         logger.exception(f"Error converting image: {e}")
+                        os.remove(img_path)
+                        continue
                     
                     images_file.append(img_path)
                     break
@@ -69,9 +97,7 @@ async def download_through_cloudscrapper(image_url, download_dir, quality=90):
                 await asyncio.sleep(3)
                 
     return images_file
-    
 
-                
 def download_and_convert_images(images, download_dir, quality=95, target_width=None):
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
@@ -80,33 +106,50 @@ def download_and_convert_images(images, download_dir, quality=95, target_width=N
     for idx, image_url in enumerate(images, 1):
         retries = 0
         while retries < 4:
-            image_response = requests.get(image_url)
-            if image_response.status_code == 200:
-                img_path = os.path.join(download_dir, f"{idx}.jpg")
-                if os.path.exists(download_dir):
-                    with open(img_path, 'wb') as img_file:
-                        img_file.write(image_response.content)
+            try:
+                image_response = requests.get(image_url)
+                if image_response.status_code == 200:
+                    img_path = os.path.join(download_dir, f"{idx}.jpg")
+                    if os.path.exists(download_dir):
+                        with open(img_path, 'wb') as img_file:
+                            img_file.write(image_response.content)
+                            
+                        # Validate and convert the image
                         try:
                             with Image.open(img_path) as img:
-                                img = img.convert("RGB")
+                                # Convert to RGB if necessary
+                                if img.mode in ('RGBA', 'LA', 'P'):
+                                    img = img.convert("RGB")
                                 img_width, img_height = img.size
                                 if target_width:
                                     new_height = int((target_width / img_width) * img_height)
                                     img = img.resize((target_width, new_height), Image.LANCZOS)
-                                    img.save(img_path, "JPEG", quality=quality, optimize=True)
+                                img.save(img_path, "JPEG", quality=quality, optimize=True)
+                                
+                                image_files.append(img_path)
+                                break
+                        except UnidentifiedImageError:
+                            # Handle corrupted images
+                            logger.warning(f"Corrupted image detected: {img_path}")
+                            os.remove(img_path)
+                            retries += 1
+                            continue
                         except Exception as e:
-                            logger.exception(f"Error converting image: {e}")
-                        
-                        image_files.append(img_path)
-                        break
+                            logger.exception(f"Error processing image: {e}")
+                            os.remove(img_path)
+                            retries += 1
+                            continue
+                    else:
+                        raise Exception("Tasks cancelled")
                 else:
-                     raise Exception("Tasks cancelled")
-                    
-            else:
-                logger.exception(f"Download :- {retries} :- {image_url}: {image_response.text}")
+                    logger.exception(f"Download :- {retries} :- {image_url}: {image_response.text}")
+                    retries += 1
+            except Exception as e:
+                logger.exception(f"Error downloading image: {e}")
                 retries += 1
 
     return image_files
+
 
 
 def compress_image(image_path, output_path, quality=95, target_width=None):
