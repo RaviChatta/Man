@@ -23,7 +23,7 @@ from sys import executable
 import shutil, psutil, time, os, platform
 import asyncio
 
-STICKER_ID = "CAACAgUAAxkBAAJFeWd037UWP-vgb_dWo55DCPZS9zJzAAJpEgACqXaJVxBrhzahNnwSHgQ"
+STICKER_ID = "CAACAgUAAxkBAAEOdZ1oqJkRz0Oqxda-z3fzRjeEsL_-tAACtQkAAum_OVdKIXt80uUHnB4E"
 
 HELPs_MSG = """
 <b>📚 Manga Downloader Bot Help Guide</b>
@@ -155,8 +155,7 @@ async def start(client, message):
         random.choice(Vars.PICS),
         caption="<blockquote>🌀 <b>Initializing System...</b></blockquote>"
     )
-    await asyncio.sleep(0.4)
-    await m.edit_caption("<blockquote>🔍 <b>Checking Resources...</b></blockquote>")
+    
     await asyncio.sleep(0.5)
     await m.edit_caption("<blockquote>⚡ <b>Powering Up...</b></blockquote>")
     await asyncio.sleep(0.5)
