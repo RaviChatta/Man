@@ -56,7 +56,8 @@ web_data = {
     " Mgeko ": MgekoWebs(),
     " Manga18fx ": Manga18fxWebs(),
     " Manhwa18 ":  Manhwa18Webs(),
-    "NHentai": NHentaiWebs(),  # ← This will work the same way
+    "NHentai": NHentaiWebs(),
+    "Bato.to": BatoWebs(),  # ← Add this line for Bato
     
 
 }
@@ -85,9 +86,15 @@ def plugins_list(type=None):
             c = web_data[i].sf
             c = f"plugin_{c}"
             button.append(InlineKeyboardButton(i, callback_data=c))
-
-    return InlineKeyboardMarkup(split_list(button))
-
+    
+    # Split into rows of 2 buttons each
+    button_rows = split_list(button)
+    
+    # Add close button as a separate row at the bottom
+    close_button = [InlineKeyboardButton("❌ Close", callback_data="close")]
+    button_rows.append(close_button)
+    
+    return InlineKeyboardMarkup(button_rows)
 
 def get_webs(sf):
     for i in web_data.keys():
