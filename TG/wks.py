@@ -118,7 +118,7 @@ async def send_manga_chapter(data, picturesList, user, sts, worker_id, webs, use
     else:
       downloads_list = await asyncio.get_running_loop().run_in_executor(None, download_and_convert_images, picturesList, download_dir)
 
-    try: await sts.edit("<code>Downloading.....</code>")
+    try: await sts.edit("<code>Downloading…This may take 1–2 minutes.</code>")
     except: pass
 
     if banner1:
