@@ -835,24 +835,17 @@ async def cb_handler(client, query):
 # User settings template
 users_txt = """
 <b>⚙️ <u>User Settings Panel</u></b>
-
 <blockquote>
 <b>🆔 User ID:</b> <code>{id}</code>
-
 <b>📝 File Name:</b> <code>{file_name}</code>
 <b>📝 File Name Length:</b> <code>{len}</code>
-
 <b>📋 Caption:</b> <code>{caption}</code>
 <b>🖼 Thumbnail:</b> <code>{thumb}</code>
-
 <b>📡 Dump Channel:</b> <code>{dump}</code>
 <b>📦 File Type:</b> <code>{type}</code>
-
 <b>🔢 Merge Size:</b> <code>{megre}</code>
 <b>🔍 Regex:</b> <code>{regex}</code>
-<b>🔐 Password:</b> <code>{password}</code>
-</blockquote>
-
+<b>🔐 Password:</b> <code>{password}</code></blockquote>
 <b>📌 Banners:</b>
 <blockquote>
 <b>1:</b> <code>{banner1}</code>
