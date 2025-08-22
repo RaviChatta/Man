@@ -1,1865 +1,1753 @@
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
-
 from .storage import *
 from bot import Bot, Vars, logger
 import random
-
 from Tools.db import *
 from pyrogram.errors import FloodWait
+import asyncio
 
+# Helper function to handle flood waits
+async def retry_on_flood(func, *args, **kwargs):
+    try:
+        return await func(*args, **kwargs)
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        return await func(*args, **kwargs)
+
+# ========================
+# BASIC HANDLERS
+# ========================
 
 @Bot.on_callback_query(filters.regex("close"))
 async def close_handler(_, query):
-  try:
-    await query.message.delete()
-    await query.message.reply_to_message.delete()
-  except:
-    pass
-  
-  try: await query.answer()
-  except: pass
+    """Elegantly close the message with proper cleanup"""
+    try:
+        await query.message.delete()
+        if query.message.reply_to_message:
+            await query.message.reply_to_message.delete()
+    except Exception:
+        pass
+    
+    try:
+        await query.answer("Closed ✅")
+    except Exception:
+        pass
 
 @Bot.on_callback_query(filters.regex("premuim"))
 async def premuim_handler(_, query):
-  """This Is Premuim Handler Of Callback Data"""
-  button = query.message.reply_markup.inline_keyboard
-  text = f"""
-<b><i>Premium Price
+    """Premium subscription information"""
+    premium_text = """
+<b>🎖 <u>Premium Subscription Plans</u></b>
 
-Pricing Rates
-  7 Days - 30 inr / 0.35 USD / NRS 40
-  1 Month - 90 inr / 1.05 USD / NRS 140
-  3 Months - 260 inr / 2.94 USD / NRS 350
-  6 Months - 500 inr / 6.33 USD / NRS 700
-  9 Months - 780 inr / 9.14 USD / NRS 1100
-  12 Months - 1000 inr / 11.8 USD / NRS 1400
+<blockquote>
+<b>📅 7 Days</b> 
+  - ₹30 / $0.35 / NRS 40
 
-Want To Buy ?!
-  Contact or DM - @Shanks_Kun
+<b>📅 1 Month</b> 
+  - ₹90 / $1.05 / NRS 140
 
-We Have Limited Seats For Premium Users</i></b>"""
-  del button[-2]
-  await retry_on_flood(query.edit_message_text)(text, reply_markup=InlineKeyboardMarkup(button))
+<b>📅 3 Months</b> 
+  - ₹260 / $2.94 / NRS 350
+
+<b>📅 6 Months</b> 
+  - ₹500 / $6.33 / NRS 700
+
+<b>📅 9 Months</b> 
+  - ₹780 / $9.14 / NRS 1100
+
+<b>📅 12 Months</b> 
+  - ₹1000 / $11.8 / NRS 1400
+</blockquote>
+
+<b>💎 Premium Benefits:</b>
+<blockquote>
+• Priority access to new features
+• Faster download speeds
+• Exclusive content
+• Ad-free experience
+</blockquote>
+
+<b>🔹 Contact Admin:</b> @Shanks_Kun
+<blockquote><i>Limited seats available for premium users</i></blockquote>
+"""
+    
+    # Keep the existing buttons except the premium one
+    buttons = query.message.reply_markup.inline_keyboard
+    new_buttons = [row for row in buttons if not any("premuim" in btn.callback_data for btn in row)]
+    
+    await retry_on_flood(
+        query.edit_message_text,
+        premium_text,
+        reply_markup=InlineKeyboardMarkup(new_buttons)
+    )
+
+# ========================
+# MANGA/CHAPTER HANDLERS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^chs"))
 async def ch_handler(client, query):
-  """This Is Information Handler Of Callback Data"""
-  reply = query.message.reply_to_message
+    """Handle chapter selection"""
+    reply = query.message.reply_to_message
+    if not reply:
+        return await query.answer("This command needs to be used in reply to a message", show_alert=True)
 
-  user_id = reply.from_user.id
-  query_user_id = query.from_user.id
-  if user_id != query_user_id:
-    return await query.answer("This is not for you", show_alert=True)
+    # Verify user ownership
+    if reply.from_user.id != query.from_user.id:
+        return await query.answer("❌ This action is not for you", show_alert=True)
 
-  try:
-    webs, data = searchs[query.data]
-  except:
-    return await query.answer("This is an old button, please redo the search",
-                              show_alert=True)
-
-  try: bio_list = await webs.get_chapters(data)
-  except: return await query.answer("No chapters found", show_alert=True)
-  
-  if not bio_list:
-    return await query.answer("No chapters found", show_alert=True)
-
-  if "poster" in bio_list:
     try:
-      await query.edit_message_media(InputMediaPhoto(bio_list['poster']))
-    except:
-      pass
+        webs, data = searchs[query.data]
+    except KeyError:
+        return await query.answer("⌛ This button has expired, please search again", show_alert=True)
 
-  c = query.data.replace("chs", "ch")
-  chaptersList[c] = webs, bio_list, data
-  sf = webs.sf
-  if "msg" in bio_list:
-    await retry_on_flood(query.edit_message_text
-                         )(bio_list['msg'][:1022],
-                           reply_markup=InlineKeyboardMarkup([[
-                               InlineKeyboardButton("📨 Chapters 📨",
-                                                    callback_data=c),
-                               InlineKeyboardButton("💠 Back 💠",
-                                                    callback_data=f"bk.s.{sf}")
-                           ]]))
-  else:
-    await retry_on_flood(query.edit_message_text
-                         )(f"{bio_list['title']}",
-                           reply_markup=InlineKeyboardMarkup([[
-                               InlineKeyboardButton("📨 Chapters 📨",
-                                                    callback_data=c),
-                               InlineKeyboardButton("💠 Back 💠",
-                                                    callback_data=f"bk.s.{sf}")
-                           ]]))
+    try:
+        bio_list = await webs.get_chapters(data)
+        if not bio_list:
+            return await query.answer("❌ No chapters found", show_alert=True)
+    except Exception as e:
+        logger.error(f"Error getting chapters: {e}")
+        return await query.answer("⚠️ Error fetching chapters", show_alert=True)
 
+    # Update media if poster available
+    if "poster" in bio_list:
+        try:
+            await query.edit_message_media(InputMediaPhoto(bio_list['poster']))
+        except Exception:
+            pass
 
+    # Store chapter data
+    c = query.data.replace("chs", "ch")
+    chaptersList[c] = (webs, bio_list, data)
+    sf = webs.sf
+
+    # Prepare response text
+    if "msg" in bio_list:
+        message_text = bio_list['msg'][:1022]
+    else:
+        message_text = f"<b>{bio_list['title']}</b>"
+
+    buttons = [
+        [
+            InlineKeyboardButton("📚 Chapters", callback_data=c),
+            InlineKeyboardButton("🔙 Back", callback_data=f"bk.s.{sf}")
+        ]
+    ]
+    
+    await retry_on_flood(
+        query.edit_message_text,
+        message_text,
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
 @Bot.on_callback_query(filters.regex("^ch"))
 async def p_handler(client, query):
-  """This Is Chapters Handler Of Callback Data"""
-  if query.data in chaptersList:
-    reply = query.message.reply_to_message
+    """Display chapter list with pagination"""
+    if query.data not in chaptersList:
+        return await query.answer("⌛ This button has expired, please search again", show_alert=True)
 
-    user_id = reply.from_user.id
-    query_user_id = query.from_user.id
-    if user_id != query_user_id:
-      return await query.answer("This is not for you", show_alert=True)
+    reply = query.message.reply_to_message
+    if not reply:
+        return await query.answer("This command needs to be used in reply to a message", show_alert=True)
+
+    # Verify user ownership
+    if reply.from_user.id != query.from_user.id:
+        return await query.answer("❌ This action is not for you", show_alert=True)
 
     webs, data, rdata = chaptersList[query.data]
     sf = webs.sf
 
-    try: 
-      chapters = await webs.iter_chapters(data)
-    except TypeError: 
-      chapters = webs.iter_chapters(data)
+    try:
+        chapters = await webs.iter_chapters(data)
+    except TypeError:
+        chapters = webs.iter_chapters(data)
 
-    subs_bool = get_subs(str(query.from_user.id), rdata['url'])
     if not chapters:
-      return await query.answer("No chapters found", show_alert=True)
+        return await query.answer("❌ No chapters found", show_alert=True)
 
-    button = []
+    # Check subscription status
+    subs_bool = get_subs(str(query.from_user.id), rdata['url'])
+    
+    # Build chapter buttons
+    buttons = []
     for chapter in chapters:
-      c = f"pic|{hash(chapter['url'])}"
-      chaptersList[c] = (webs, chapter)
-      button.append(InlineKeyboardButton(chapter['title'], callback_data=c))
+        c = f"pic|{hash(chapter['url'])}"
+        chaptersList[c] = (webs, chapter)
+        btn_text = f"Ch. {chapter['title']}" if chapter['title'].isdigit() else chapter['title']
+        buttons.append(InlineKeyboardButton(btn_text, callback_data=c))
 
-    button = split_list(button[:60])
+    # Split buttons into rows
+    buttons = split_list(buttons[:60])
+    
+    # Add pagination if needed
     c = f"pg:{sf}:{hash(chapters[-1]['url'])}:"
     if len(chapters) > 60 or sf == "ck":
-      pagination[c] = (webs, data, rdata)
-      button.append([
-          InlineKeyboardButton(">>", callback_data=f"{c}1"),
-          InlineKeyboardButton("2x>", callback_data=f"{c}2"),
-          InlineKeyboardButton("5x>", callback_data=f"{c}5")
-      ])
+        pagination[c] = (webs, data, rdata)
+        buttons.append([
+            InlineKeyboardButton("⏮", callback_data=f"{c}1"),
+            InlineKeyboardButton("◀", callback_data=f"{c}2"),
+            InlineKeyboardButton("▶", callback_data=f"{c}5"),
+            InlineKeyboardButton("⏭", callback_data=f"{c}10")
+        ])
 
-    c = f"subs:{hash(rdata['url'])}"
-    subscribes[c] = (webs, rdata)
-    if subs_bool:
-      button.insert(
-        0,
-        [InlineKeyboardButton("🔔 Unsubscribe 🔔", callback_data=c)])
-    else:
-      button.insert(
-        0,
-        [InlineKeyboardButton("📯 Subscribe 📯", callback_data=c)])
+    # Add subscription button
+    sub_callback = f"subs:{hash(rdata['url'])}"
+    subscribes[sub_callback] = (webs, rdata)
+    sub_button = [InlineKeyboardButton(
+        "🔔 Subscribed" if subs_bool else "📯 Subscribe", 
+        callback_data=sub_callback
+    )]
+    buttons.insert(0, sub_button)
+
+    # Add special buttons based on source
     if sf == "ck":
-      callback_data = f"sgh:{sf}:{hash(chapters[0]['url'])}"
-      pagination[callback_data] = (chapters, webs, rdata, "1")
-      button.append([InlineKeyboardButton("📡 Scanlation Group 📡", callback_data=callback_data)])
+        scan_callback = f"sgh:{sf}:{hash(chapters[0]['url'])}"
+        pagination[scan_callback] = (chapters, webs, rdata, "1")
+        buttons.append([InlineKeyboardButton("👥 Scanlation Groups", callback_data=scan_callback)])
     else:
-      callback_data = f"full:{sf}:{hash(chapters[0]['url'])}"
-      pagination[callback_data] = (chapters[:60], webs)
-      button.append([InlineKeyboardButton("📚 Full Page 📚", callback_data=callback_data)])
-    
-    button.append(
-        [InlineKeyboardButton("💠 Back 💠", callback_data=f"bk.s.{sf}")])
-    await retry_on_flood(query.edit_message_reply_markup)(InlineKeyboardMarkup(button))
-  else:
-    try: await query.answer("This is an old button, please redo the search", show_alert=True)
-    except: pass
+        full_callback = f"full:{sf}:{hash(chapters[0]['url'])}"
+        pagination[full_callback] = (chapters[:60], webs)
+        buttons.append([InlineKeyboardButton("📖 All Chapters", callback_data=full_callback)])
 
+    # Add back button
+    buttons.append([InlineKeyboardButton("🔙 Back", callback_data=f"bk.s.{sf}")])
+
+    await retry_on_flood(
+        query.edit_message_reply_markup,
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+# ========================
+# PAGINATION HANDLERS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^pg"))
 async def pg_handler(client, query):
-  """This Is Pagination Handler Of Callback Data"""
-  reply = query.message.reply_to_message
+    """Handle pagination for chapter lists"""
+    reply = query.message.reply_to_message
+    if not reply:
+        return await query.answer("This command needs to be used in reply to a message", show_alert=True)
 
-  user_id = reply.from_user.id
-  query_user_id = query.from_user.id
-  if user_id != query_user_id:
-    return await query.answer("This is not for you", show_alert=True)
+    # Verify user ownership
+    if reply.from_user.id != query.from_user.id:
+        return await query.answer("❌ This action is not for you", show_alert=True)
 
-  data = query.data.split(":")
-  page = data[-1]
-  data = ":".join(data[:-1])
-  data = f"{data}:"
-  if data in pagination:
-    webs, data, rdata = pagination[data]
+    data_parts = query.data.split(":")
+    if len(data_parts) < 4:
+        return await query.answer("Invalid pagination data", show_alert=True)
+
+    page = data_parts[-1]
+    base_data = ":".join(data_parts[:-1]) + ":"
+    
+    if base_data not in pagination:
+        return await query.answer("⌛ This button has expired, please search again", show_alert=True)
+
+    webs, data, rdata = pagination[base_data]
     sf = webs.sf
+    
+    # Check subscription status
     subs_bool = get_subs(str(query.from_user.id), rdata['url'])
-    if sf == "ck":
-      chapters = await webs.get_chapters(rdata, int(page))
-      if not chapters:
-        return await query.answer("No chapters found", show_alert=True)
 
-      chapters = webs.iter_chapters(chapters)
-    else:
-      try: 
-        chapters = await webs.iter_chapters(data, int(page))
-      except TypeError: 
-        chapters = webs.iter_chapters(data, int(page))
+    # Get chapters based on page
+    try:
+        if sf == "ck":
+            chapters = await webs.get_chapters(rdata, int(page))
+            if not chapters:
+                return await query.answer("❌ No chapters found", show_alert=True)
+            chapters = webs.iter_chapters(chapters)
+        else:
+            try:
+                chapters = await webs.iter_chapters(data, int(page))
+            except TypeError:
+                chapters = webs.iter_chapters(data, int(page))
+    except Exception as e:
+        logger.error(f"Error getting paginated chapters: {e}")
+        return await query.answer("⚠️ Error loading chapters", show_alert=True)
 
     if not chapters:
-      return await query.answer("No chapters found", show_alert=True)
+        return await query.answer("❌ No chapters found", show_alert=True)
 
-    button = []
+    # Build chapter buttons
+    buttons = []
     for chapter in chapters:
-      c = f"pic|{hash(chapter['url'])}"
-      chaptersList[c] = (webs, chapter)
-      button.append(InlineKeyboardButton(chapter['title'], callback_data=c))
+        c = f"pic|{hash(chapter['url'])}"
+        chaptersList[c] = (webs, chapter)
+        btn_text = f"Ch. {chapter['title']}" if chapter['title'].isdigit() else chapter['title']
+        buttons.append(InlineKeyboardButton(btn_text, callback_data=c))
 
-    button = split_list(button[:60])
+    # Split buttons into rows
+    buttons = split_list(buttons[:60])
+    
+    # Add pagination controls
     c = f"pg:{sf}:{hash(chapters[-1]['url'])}:"
     pagination[c] = (webs, data, rdata)
-    if int(page) > 1:
-      button.append([
-              InlineKeyboardButton("<<", callback_data=f"{c}{int(page) - 1}"),
-              InlineKeyboardButton("<2x", callback_data=f"{c}{int(page) - 2}"),
-              InlineKeyboardButton("<5x", callback_data=f"{c}{int(page) - 5}")
-          ])
-
-    button.append([
-          InlineKeyboardButton(">>", callback_data=f"{c}{int(page) + 1}"),
-          InlineKeyboardButton("2x>", callback_data=f"{c}{int(page) + 2}"),
-          InlineKeyboardButton("5x>", callback_data=f"{c}{int(page) + 5}"),
+    
+    nav_buttons = []
+    current_page = int(page)
+    
+    # Previous page buttons
+    if current_page > 1:
+        nav_buttons.extend([
+            InlineKeyboardButton("⏮", callback_data=f"{c}1"),
+            InlineKeyboardButton("◀", callback_data=f"{c}{current_page - 1}")
+        ])
+    
+    # Next page buttons
+    nav_buttons.extend([
+        InlineKeyboardButton("▶", callback_data=f"{c}{current_page + 1}"),
+        InlineKeyboardButton("⏭", callback_data=f"{c}{current_page + 10}")
     ])
+    
+    buttons.append(nav_buttons)
 
-    c = f"subs:{hash(rdata['url'])}"
-    subscribes[c] = (webs, rdata)
-    if subs_bool:
-      button.insert(
-        0,
-        [InlineKeyboardButton("🔔 Unsubscribe 🔔", callback_data=c)])
-    else:
-      button.insert(
-        0,
-        [InlineKeyboardButton("📯 Subscribe 📯", callback_data=c)])
+    # Add subscription button
+    sub_callback = f"subs:{hash(rdata['url'])}"
+    subscribes[sub_callback] = (webs, rdata)
+    sub_button = [InlineKeyboardButton(
+        "🔔 Subscribed" if subs_bool else "📯 Subscribe", 
+        callback_data=sub_callback
+    )]
+    buttons.insert(0, sub_button)
+
+    # Add special buttons based on source
     if sf == "ck":
-      callback_data = f"sgh:{sf}:{hash(chapters[0]['url'])}"
-      pagination[callback_data] = (chapters, webs, rdata, page)
-      button.append([InlineKeyboardButton("📡 Scanlation Group 📡", callback_data=callback_data)])
+        scan_callback = f"sgh:{sf}:{hash(chapters[0]['url'])}"
+        pagination[scan_callback] = (chapters, webs, rdata, page)
+        buttons.append([InlineKeyboardButton("👥 Scanlation Groups", callback_data=scan_callback)])
     else:
-      callback_data = f"full:{sf}:{hash(chapters[0]['url'])}"
-      if int(page) == 1:
-        pagination[callback_data] = (chapters[:60], webs)
-      else:
-        pagination[callback_data] = (chapters, webs)
-      
-      button.append([InlineKeyboardButton("📚 Full Page 📚", callback_data=callback_data)])
+        full_callback = f"full:{sf}:{hash(chapters[0]['url'])}"
+        if int(page) == 1:
+            pagination[full_callback] = (chapters[:60], webs)
+        else:
+            pagination[full_callback] = (chapters, webs)
+        buttons.append([InlineKeyboardButton("📖 All Chapters", callback_data=full_callback)])
 
-    button.append([InlineKeyboardButton("💠 Back 💠", callback_data=f"bk.s.{sf}")])
-    await retry_on_flood(query.edit_message_reply_markup)(InlineKeyboardMarkup(button))
-  else:
-    try: await query.answer("This is an old button, please redo the search", show_alert=True)
-    except: pass
+    # Add back button
+    buttons.append([InlineKeyboardButton("🔙 Back", callback_data=f"bk.s.{sf}")])
 
+    await retry_on_flood(
+        query.edit_message_reply_markup,
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+# ========================
+# SCANLATION GROUP HANDLERS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^sgh"))
 async def cgk_handler(client, query):
-  """This Is Scanlation Group Handler Of Callback Data"""
-  if query.data in pagination:
-    jcallback_back = query.data
+    """Handle scanlation group selection"""
+    if query.data not in pagination:
+        return await query.answer("⌛ This button has expired, please search again", show_alert=True)
+
     reply = query.message.reply_to_message
-    user_id = reply.from_user.id
-    query_user_id = query.from_user.id
-    if user_id != query_user_id:
-      return await query.answer("This is not for you", show_alert=True)
-    
+    if reply and reply.from_user.id != query.from_user.id:
+        return await query.answer("❌ This action is not for you", show_alert=True)
+
     chapters, webs, rdata, page = pagination[query.data]
-    data = {}
+    
+    # Organize chapters by group
+    groups = {}
     for chapter in chapters:
-      group_name = chapter['group_name']
-      if group_name:
-        if group_name not in data:
-          data[group_name] = []
-        data[group_name].append(chapter)
-      else:
-        if "Unknown" not in data:
-          data["Unknown"] = []
-        data["Unknown"].append(chapter)
+        group_name = chapter.get('group_name', 'Unknown')
+        if group_name not in groups:
+            groups[group_name] = []
+        groups[group_name].append(chapter)
 
-    button = []
+    # Build group buttons
+    buttons = []
+    for group_name, group_chapters in groups.items():
+        group_len = len(group_chapters)
+        c = f"sgk|{hash(group_name)}"
+        pagination[c] = (group_chapters, webs, page, f"pg:{webs.sf}:{hash(chapters[-1]['url'])}:{page}", query.data)
+        
+        group_display = group_name if group_name != 'Unknown' else 'No Group'
+        buttons.append([
+            InlineKeyboardButton(f"{group_display} ({group_len})", callback_data=c)
+        ])
     
-    rcallback_data = f"pg:{webs.sf}:{hash(chapters[-1]['url'])}:{page}"
-    pagination[rcallback_data] = (webs, chapters, rdata)
-    for group_name in data.keys():
-      groupLen = len(data[group_name])
-      c = f"sgk|{hash(group_name)}"
-      pagination[c] = (data[group_name], webs, page, rcallback_data, jcallback_back)
-      button.append([InlineKeyboardButton(f"{group_name} ({groupLen})", callback_data=c)])
+    # Add back button
+    back_callback = f"pg:{webs.sf}:{hash(chapters[-1]['url'])}:{page}"
+    buttons.append([InlineKeyboardButton("🔙 Back to Chapters", callback_data=back_callback)])
     
+    await retry_on_flood(
+        query.edit_message_reply_markup,
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
     
-    button.append([InlineKeyboardButton("💠 Back To Chapters 💠", callback_data=rcallback_data)])
-    await retry_on_flood(query.edit_message_reply_markup)(InlineKeyboardMarkup(button))
-    
-    try: await query.answer()
-    except: pass
-  else:
-    try: await query.answer("This is an old button, please redo the search", show_alert=True)
-    except: pass
-
+    await query.answer()
 
 @Bot.on_callback_query(filters.regex("^sgk"))
 async def sgk_handler(client, query):
-  if query.data in pagination:
+    """Display chapters from a specific scanlation group"""
+    if query.data not in pagination:
+        return await query.answer("⌛ This button has expired, please search again", show_alert=True)
+
     reply = query.message.reply_to_message
-    if reply:
-      user_id = reply.from_user.id
-      query_user_id = query.from_user.id
-      if user_id != query_user_id:
-        return await query.answer("This is not for you", show_alert=True)
-    
+    if reply and reply.from_user.id != query.from_user.id:
+        return await query.answer("❌ This action is not for you", show_alert=True)
+
     chapters, webs, page, rcallback_data, jcallback_back = pagination[query.data]
     chapters = list(reversed(chapters)) 
-    button = []
+    
+    # Build chapter buttons
+    buttons = []
     for chapter in chapters:
-      c = f"pic|{hash(chapter['url'])}"
-      chaptersList[c] = (webs, chapter)
-      button.append(InlineKeyboardButton(chapter['title'], callback_data=c))
-    
-    button = split_list(button[:60])
-    callback_data = f"full:{webs.sf}:{hash(chapters[0]['url'])}"
-    pagination[callback_data] = (chapters, webs)
-    button.append([InlineKeyboardButton("📖 Full Page 📖", callback_data=callback_data)])
-    
-    button.append([InlineKeyboardButton("🧸 Back To Groups 🧸", callback_data=jcallback_back)])
-    button.append([InlineKeyboardButton("💸 Back To Chapters 💸", callback_data=rcallback_data)])
-    await retry_on_flood(query.edit_message_reply_markup)(InlineKeyboardMarkup(button))
-    try: await query.answer()
-    except: pass
-  else:
-    try: await query.answer("This is an old button, please redo the search", show_alert=True)
-    except: pass
+        c = f"pic|{hash(chapter['url'])}"
+        chaptersList[c] = (webs, chapter)
+        btn_text = f"Ch. {chapter['title']}" if chapter['title'].isdigit() else chapter['title']
+        buttons.append(InlineKeyboardButton(btn_text, callback_data=c))
 
+    # Split buttons into rows
+    buttons = split_list(buttons[:60])
+    
+    # Add full page button
+    full_callback = f"full:{webs.sf}:{hash(chapters[0]['url'])}"
+    pagination[full_callback] = (chapters, webs)
+    buttons.append([InlineKeyboardButton("📖 All Chapters in Group", callback_data=full_callback)])
+    
+    # Add navigation buttons
+    buttons.append([
+        InlineKeyboardButton("🔙 Back to Groups", callback_data=jcallback_back),
+        InlineKeyboardButton("↩️ Back to All", callback_data=rcallback_data)
+    ])
+    
+    await retry_on_flood(
+        query.edit_message_reply_markup,
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+    
+    await query.answer()
+
+# ========================
+# DOWNLOAD HANDLERS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^full"))
 async def full_handler(client, query):
-  """This Is Full Page Handler Of Callback Data"""
-  if query.data in pagination:
-    reply = query.message.reply_to_message
+    """Handle full chapter downloads"""
+    if query.data not in pagination:
+        return await query.answer("⌛ This button has expired, please search again", show_alert=True)
 
-    user_id = reply.from_user.id
-    query_user_id = query.from_user.id
-    if user_id != query_user_id:
-      return await query.answer("This is not for you", show_alert=True)
+    reply = query.message.reply_to_message
+    if not reply:
+        return await query.answer("This command needs to be used in reply to a message", show_alert=True)
+
+    # Verify user ownership
+    if reply.from_user.id != query.from_user.id:
+        return await query.answer("❌ This action is not for you", show_alert=True)
 
     chapters, webs = pagination[query.data]
     added_item = []
 
-    merge_size = uts[str(query.from_user.id)].get('setting', {}).get('megre', None)
-    merge_size = int(merge_size) if merge_size else merge_size
-
-    chapters = list(reversed(chapters)) 
+    # Get user settings
+    user_settings = uts.get(str(query.from_user.id), {}).get('setting', {})
+    merge_size = user_settings.get('megre')
     if merge_size:
-      for i in range(0, len(chapters), merge_size):
-        data = chapters[i:i + merge_size]
-        raw_data = []
-        pictures = []
-        for chapter in data:
-          episode_num = get_episode_number(chapter['title'])
-          if not episode_num in added_item:
-            pictures_ex = await webs.get_pictures(url=chapter['url'], data=chapter)
-            if pictures_ex:
-              if webs.bg:
-                pictures_ex.remove(pictures_ex[0])
+        merge_size = int(merge_size)
 
-              pictures.extend(pictures_ex)
-              added_item.append(episode_num)
-              raw_data.append(chapter)
-        if pictures:
-          task_id = await queue.put((raw_data, pictures, query, None, webs), query.from_user.id)
+    # Reverse chapters for proper ordering
+    chapters = list(reversed(chapters)) 
+
+    # Process chapters based on merge settings
+    if merge_size:
+        for i in range(0, len(chapters), merge_size):
+            batch = chapters[i:i + merge_size]
+            raw_data = []
+            pictures = []
+            
+            for chapter in batch:
+                episode_num = get_episode_number(chapter['title'])
+                if episode_num not in added_item:
+                    try:
+                        pictures_ex = await webs.get_pictures(url=chapter['url'], data=chapter)
+                        if pictures_ex:
+                            if webs.bg:
+                                pictures_ex.pop(0)  # Remove background if exists
+                            pictures.extend(pictures_ex)
+                            added_item.append(episode_num)
+                            raw_data.append(chapter)
+                    except Exception as e:
+                        logger.error(f"Error getting pictures: {e}")
+                        continue
+            
+            if pictures:
+                task_id = await queue.put((raw_data, pictures, query, None, webs), query.from_user.id)
     else:
-      for data in chapters:
-        episode_num = get_episode_number(data['title'])
-        if not episode_num in added_item:
-          pictures = await webs.get_pictures(url=data['url'], data=data)
-          if not pictures:
-            await retry_on_flood(sts.edit)("No pictures found")
-
-          task_id = await queue.put((data, pictures, query, None, webs), query.from_user.id)
-          added_item.append(episode_num)
+        for chapter in chapters:
+            episode_num = get_episode_number(chapter['title'])
+            if episode_num not in added_item:
+                try:
+                    pictures = await webs.get_pictures(url=chapter['url'], data=chapter)
+                    if not pictures:
+                        continue
+                    
+                    task_id = await queue.put((chapter, pictures, query, None, webs), query.from_user.id)
+                    added_item.append(episode_num)
+                except Exception as e:
+                    logger.error(f"Error processing chapter: {e}")
+                    continue
     
-    try: await query.answer("Added To Queue", show_alert=True)
-    except: pass
-  else:
-    try: await query.answer("This is an old button, please redo the search", show_alert=True)
-    except: pass
+    await query.answer("✅ Added to download queue", show_alert=True)
 
+# ========================
+# SUBSCRIPTION HANDLERS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^subs"))
 async def subs_handler(client, query):
-  """This Is Subscribe Handler Of Callback Data"""
-  if query.data in subscribes:
+    """Handle manga subscriptions"""
+    if query.data not in subscribes:
+        return await query.answer("⌛ This button has expired, please search again", show_alert=True)
+
     webs, data = subscribes[query.data]
 
     reply = query.message.reply_to_message
+    if not reply:
+        return await query.answer("This command needs to be used in reply to a message", show_alert=True)
 
-    user_id = reply.from_user.id
-    query_user_id = query.from_user.id
-    if user_id != query_user_id:
-      return await query.answer("This is not for you", show_alert=True)
+    # Verify user ownership
+    if reply.from_user.id != query.from_user.id:
+        return await query.answer("❌ This action is not for you", show_alert=True)
 
-    reply_markup = query.message.reply_markup
-    button = reply_markup.inline_keyboard
+    # Get current buttons
+    buttons = query.message.reply_markup.inline_keyboard
 
+    # Toggle subscription status
     if get_subs(str(query.from_user.id), data['url']):
-      delete_sub(str(query.from_user.id), data['url'])
-      button[0] = [InlineKeyboardButton("📯 Subscribe 📯", callback_data=query.data)]
+        delete_sub(str(query.from_user.id), data['url'])
+        buttons[0] = [InlineKeyboardButton("📯 Subscribe", callback_data=query.data)]
+        await query.answer("❌ Unsubscribed")
     else:
-      add_sub(str(query.from_user.id), data['url'])
-      button[0] = [InlineKeyboardButton("🔔 Unsubscribe 🔔", callback_data=query.data)]
-    await retry_on_flood(query.edit_message_reply_markup)(InlineKeyboardMarkup(button))
-  else:
-    try: await query.answer("This is an old button, please redo the search", show_alert=True)
-    except: pass
+        add_sub(str(query.from_user.id), data['url'])
+        buttons[0] = [InlineKeyboardButton("🔔 Subscribed", callback_data=query.data)]
+        await query.answer("✅ Subscribed")
 
+    await retry_on_flood(
+        query.edit_message_reply_markup,
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+# ========================
+# PICTURE DOWNLOAD HANDLERS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^pic"))
 async def pic_handler(client, query):
-  """This Is Pictures Handler Of Callback Data"""
-  if query.data in chaptersList:
+    """Handle individual chapter downloads"""
+    if query.data not in chaptersList:
+        return await query.answer("⌛ This button has expired, please search again", show_alert=True)
+
     webs, data = chaptersList[query.data]
+    
     reply = query.message.reply_to_message
+    if not reply:
+        return await query.answer("This command needs to be used in reply to a message", show_alert=True)
 
-    user_id = reply.from_user.id
-    query_user_id = query.from_user.id
-    if user_id != query_user_id:
-      return await query.answer("This is not for you", show_alert=True)
+    # Verify user ownership
+    if reply.from_user.id != query.from_user.id:
+        return await query.answer("❌ This action is not for you", show_alert=True)
 
-    pictures = await webs.get_pictures(url=data['url'], data=data)
-    if not pictures:
-      return await query.answer("No pictures found", show_alert=True)
+    try:
+        pictures = await webs.get_pictures(url=data['url'], data=data)
+        if not pictures:
+            return await query.answer("❌ No pictures found", show_alert=True)
+    except Exception as e:
+        logger.error(f"Error getting pictures: {e}")
+        return await query.answer("⚠️ Error loading chapter", show_alert=True)
 
-    sts = await retry_on_flood(query.message.reply_text
-       )("<code>Adding...</code>")
+    # Send initial status message
+    status_msg = await retry_on_flood(
+        query.message.reply_text,
+        "<i>⏳ Adding to download queue...</i>"
+    )
 
-    txt = f"Manga Name: {data['manga_title']}\nChapter: - {data['title']}"
+    # Prepare caption
+    caption = f"""
+<b>📖 Manga:</b> {data.get('manga_title', 'N/A')}
+<b>📚 Chapter:</b> {data.get('title', 'N/A')}
+"""
+    if 'group_name' in data and data['group_name']:
+        caption += f"<b>👥 Group:</b> {data['group_name']}\n"
 
-    task_id = await queue.put((data, pictures, query, sts, webs), query.from_user.id)
-    button = [[
-        InlineKeyboardButton(" Cancel Your Tasks ",
-                             callback_data=f"cl:{task_id}")
+    # Add to queue and get task ID
+    task_id = await queue.put((data, pictures, query, status_msg, webs), query.from_user.id)
+
+    # Add cancel button
+    buttons = [[
+        InlineKeyboardButton("❌ Cancel Download", callback_data=f"cl:{task_id}")
     ]]
-    await retry_on_flood(sts.edit)(txt, reply_markup=InlineKeyboardMarkup(button))
-  else:
-    try: await query.answer("This is an old button, please redo the search", show_alert=True)
-    except: pass
+    
+    await retry_on_flood(
+        status_msg.edit,
+        caption,
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
+# ========================
+# TASK MANAGEMENT HANDLERS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^cl"))
 async def cl_handler(client, query):
-  """This Is Cancel Handler Of Callback Data"""
-  task_id = query.data.split(":")[-1]
-  reply = query.message.reply_to_message
+    """Handle task cancellation"""
+    task_id = query.data.split(":")[-1]
+    
+    if await queue.delete_task(task_id):
+        await retry_on_flood(
+            query.message.edit_text,
+            "<b>❌ Download Cancelled</b>"
+        )
+        await query.answer("Download cancelled", show_alert=True)
+    else:
+        await retry_on_flood(
+            query.answer,
+            "Task not found or already completed",
+            show_alert=True
+        )
 
-  if await queue.delete_task(task_id):
-    await retry_on_flood(query.message.edit_text)("<b>Task Cancelled !</b>")
-  else:
-    await retry_on_flood(query.answer)("Task Not Found", show_alert=True)
-
+# ========================
+# NAVIGATION HANDLERS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^bk"))
 async def bk_handler(client, query):
-  """This Is Back Handler Of Callback Data"""
-  reply = query.message.reply_to_message
-  try:
-    user_id = reply.from_user.id
-    query_user_id = query.from_user.id
-    if user_id != query_user_id:
-      return await query.answer("This is not for you", show_alert=True)
-  except:
-    pass
-  
-  if query.data == "bk.p":
-    try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-    except: pass
-    if reply and reply.text == "/updates":
-      await query.edit_message_reply_markup(plugins_list("updates"))
-    else:
-      await query.edit_message_reply_markup(plugins_list())
-  elif query.data.startswith("bk.s"):
-    data = query.data
-    sf = query.data.split(".")[-1]
-    
-    reply = reply.text
-    if reply.startswith("/search"):
-      search = reply.split(" ", 1)[-1]
-    else:
-      search = reply
-
-    webs = get_webs(sf)
-    if webs:
-      photo = random.choice(Vars.PICS)
-      try:
-        await query.edit_message_media(InputMediaPhoto(photo))
-      except:
-        pass
-
-      reply_markup = query.message.reply_markup
-      if query.message.reply_to_message:
+    """Handle back navigation"""
+    reply = query.message.reply_to_message
+    if reply:
         try:
-          if reply.startswith("/updates"):
-            try:
-              await query.message.edit_text("<i>Updating...</i>")
-            except:
-              pass
-            
-            results = await webs.get_updates()
-            for result in results:
-              result['title'] = result.pop('manga_title')
-            
-          else:
-            try:
-              await query.message.edit_text("<i>Searching...</i>")
-            except:
-              pass
-            
-            results = await webs.search(search)
-        except:
-          return await query.edit_message_text("<b>No results found</b>", reply_markup=reply_markup)
+            if reply.from_user.id != query.from_user.id:
+                return await query.answer("❌ This action is not for you", show_alert=True)
+        except Exception:
+            pass
+    
+    if query.data == "bk.p":
+        # Return to main menu
+        try:
+            await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
+        except Exception:
+            pass
         
-        if results:
-          button = []
-          for result in results:
-            c = f"chs|{data}{result['id']}" if "id" in result else f"chs|{data}{hash(result['url'])}"
-            searchs[c] = (webs, result)
-            button.append(
-                [InlineKeyboardButton(result['title'], callback_data=c)])
-
-          button.append(
-              [InlineKeyboardButton("🪬 Back 🪬", callback_data="bk.p")])
-          await retry_on_flood(query.edit_message_text
-                               )("<b>Select Manga</b>",
-                                 reply_markup=InlineKeyboardMarkup(button))
+        if reply and reply.text == "/updates":
+            await query.edit_message_reply_markup(plugins_list("updates"))
         else:
-          await retry_on_flood(query.message.edit_text
-                               )("<b>No results found</b>",
-                                 reply_markup=reply_markup)
+            await query.edit_message_reply_markup(plugins_list())
+    
+    elif query.data.startswith("bk.s"):
+        # Return to search results
+        sf = query.data.split(".")[-1]
+        
+        search_text = reply.text if reply else ""
+        if search_text.startswith("/search"):
+            search = search_text.split(" ", 1)[-1]
+        else:
+            search = search_text
 
+        webs = get_webs(sf)
+        if not webs:
+            return await query.answer("❌ Source not available", show_alert=True)
+
+        # Update UI
+        try:
+            await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
+        except Exception:
+            pass
+
+        # Show loading state
+        try:
+            await query.message.edit_text("<i>🔍 Searching...</i>")
+        except Exception:
+            pass
+
+        # Get results
+        try:
+            if reply and reply.text.startswith("/updates"):
+                results = await webs.get_updates()
+                for result in results:
+                    result['title'] = result.pop('manga_title')
+            else:
+                results = await webs.search(search)
+        except Exception as e:
+            logger.error(f"Search error: {e}")
+            return await query.message.edit_text(
+                "<b>❌ Error fetching results</b>",
+                reply_markup=query.message.reply_markup
+            )
+
+        if not results:
+            return await query.message.edit_text(
+                "<b>❌ No results found</b>",
+                reply_markup=query.message.reply_markup
+            )
+
+        # Build results buttons
+        buttons = []
+        for result in results:
+            callback_data = f"chs|{query.data}{result['id']}" if "id" in result else f"chs|{query.data}{hash(result['url'])}"
+            searchs[callback_data] = (webs, result)
+            
+            title = result['title'][:50] + "..." if len(result['title']) > 50 else result['title']
+            buttons.append([InlineKeyboardButton(title, callback_data=callback_data)])
+
+        # Add back button
+        buttons.append([InlineKeyboardButton("🔙 Back", callback_data="bk.p")])
+        
+        await retry_on_flood(
+            query.edit_message_text,
+            "<b>📚 Select Manga</b>",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+
+# ========================
+# UPDATES HANDLER
+# ========================
 
 @Bot.on_callback_query(filters.regex("^udat"))
 async def updates_handler(_, query):
-  sf = query.data.split("_")[-1]
-  webs = get_webs(sf)
-  
-  await retry_on_flood(query.edit_message_text)("<i>Getting Updates...</i>")
-  if webs:
-    results = await webs.get_updates()
-    button = []
-    if results:
-      for result in results[:60]:
-        c = f"chs|{sf}{result['id']}" if "id" in result else f"chs|{sf}{hash(result['url'])}"
-        result['title'] = result.pop('manga_title')
-        searchs[c] = (webs, result)
-        button.append([InlineKeyboardButton(result['title'], callback_data=c)])
-      
-      button.append([InlineKeyboardButton("🔥 Back 🔥", callback_data="bk.p")])
-      
-      try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-      except: pass
-      
-      await retry_on_flood(query.edit_message_text)("<b>Select Manga</b>", reply_markup=InlineKeyboardMarkup(button))
-      try: await query.answer()
-      except: pass
-    else:
-      try: await query.answer("It's hard to add Website updates ", show_alert=True)
-      except: pass
-  else:
-    try: await query.answer("Websites Not Found AT Database", show_alert=True)
-    except: pass
+    """Handle manga updates"""
+    sf = query.data.split("_")[-1]
+    webs = get_webs(sf)
+    
+    if not webs:
+        return await query.answer("❌ Source not available", show_alert=True)
 
+    await retry_on_flood(
+        query.edit_message_text,
+        "<i>🔄 Fetching latest updates...</i>"
+    )
+
+    try:
+        results = await webs.get_updates()
+        if not results:
+            return await query.answer("⚠️ No updates available", show_alert=True)
+        
+        # Prepare buttons
+        buttons = []
+        for result in results[:60]:  # Limit to 60 results
+            result['title'] = result.pop('manga_title', 'Untitled')
+            callback_data = f"chs|{sf}{result['id']}" if "id" in result else f"chs|{sf}{hash(result['url'])}"
+            searchs[callback_data] = (webs, result)
+            
+            title = result['title'][:50] + "..." if len(result['title']) > 50 else result['title']
+            buttons.append([InlineKeyboardButton(title, callback_data=callback_data)])
+
+        # Add back button
+        buttons.append([InlineKeyboardButton("🔙 Back", callback_data="bk.p")])
+        
+        # Update UI
+        try:
+            await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
+        except Exception:
+            pass
+        
+        await retry_on_flood(
+            query.edit_message_text,
+            "<b>🆕 Latest Updates</b>",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+        
+        await query.answer()
+    except Exception as e:
+        logger.error(f"Updates error: {e}")
+        await query.answer("⚠️ Error fetching updates", show_alert=True)
+
+# ========================
+# PLUGIN HANDLER
+# ========================
 
 @Bot.on_callback_query(filters.regex("^plugin_"))
 async def cb_handler(client, query):
-  data = query.data
-  data = data.split("_")[-1]
-  photo = random.choice(Vars.PICS)
-  reply = query.message.reply_to_message
+    """Handle plugin selection"""
+    data = query.data.split("_")[-1]
+    
+    reply = query.message.reply_to_message
+    if not reply:
+        return await query.answer("This command needs to be used in reply to a message", show_alert=True)
 
-  user_id = reply.from_user.id
-  query_user_id = query.from_user.id
-  if user_id != query_user_id:
-    return await query.answer("This is not for you", show_alert=True)
+    # Verify user ownership
+    if reply.from_user.id != query.from_user.id:
+        return await query.answer("❌ This action is not for you", show_alert=True)
 
-  reply = reply.text
-  if reply.startswith("/search"):
-    search = reply.split(" ", 1)[-1]
-  else:
-    search = reply
-  for i in web_data.keys():
-    if data == web_data[i].sf:
-      try:
-        await query.edit_message_media(InputMediaPhoto(photo))
-      except:
-        pass
+    # Get search query
+    if reply.text.startswith("/search"):
+        search = reply.text.split(" ", 1)[-1]
+    else:
+        search = reply.text
 
-      reply_markup = query.message.reply_markup
-      try:
-        await query.edit_message_text("<i>Searching...</i>")
-      except:
-        pass
+    # Find matching web source
+    for key in web_data:
+        if data == web_data[key].sf:
+            webs = web_data[key]
+            
+            # Update UI
+            try:
+                await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
+            except Exception:
+                pass
 
-      try: results = await web_data[i].search(search)
-      except: await query.edit_message_text("<b>No results found</b>", reply_markup=reply_markup)
-      
-      if results:
-        button = []
-        for result in results:
-          c = f"chs|{data}{result['id']}" if "id" in result else f"chs|{data}{hash(result['url'])}"
-          searchs[c] = (web_data[i], result)
-          button.append(
-              [InlineKeyboardButton(result['title'], callback_data=c)])
+            await retry_on_flood(
+                query.edit_message_text,
+                "<i>🔍 Searching...</i>"
+            )
 
-        button.append([InlineKeyboardButton("🔥 Back 🔥", callback_data="bk.p")])
-        await retry_on_flood(query.edit_message_text
-                             )("<b>Select Manga</b>",
-                               reply_markup=InlineKeyboardMarkup(button))
-      else:
-        await retry_on_flood(query.edit_message_text
-                             )("<b>No results found</b>",
-                               reply_markup=reply_markup)
+            try:
+                results = await webs.search(search)
+                if not results:
+                    return await query.message.edit_text(
+                        "<b>❌ No results found</b>",
+                        reply_markup=query.message.reply_markup
+                    )
 
-      try:
-        await query.answer()
-      except:
-        pass
-      finally:
-        return
+                # Prepare buttons
+                buttons = []
+                for result in results:
+                    callback_data = f"chs|{data}{result['id']}" if "id" in result else f"chs|{data}{hash(result['url'])}"
+                    searchs[callback_data] = (webs, result)
+                    
+                    title = result['title'][:50] + "..." if len(result['title']) > 50 else result['title']
+                    buttons.append([InlineKeyboardButton(title, callback_data=callback_data)])
 
-  try:
-    await query.answer('This is an old button, please redo the search',
-                       show_alert=True)
-  except:
-    pass
-  finally:
-    return
+                # Add back button
+                buttons.append([InlineKeyboardButton("🔙 Back", callback_data="bk.p")])
+                
+                await retry_on_flood(
+                    query.edit_message_text,
+                    "<b>📚 Select Manga</b>",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+                
+                await query.answer()
+                return
+            except Exception as e:
+                logger.error(f"Search error: {e}")
+                return await query.message.edit_text(
+                    "<b>❌ Error fetching results</b>",
+                    reply_markup=query.message.reply_markup
+                )
 
+    await query.answer('⌛ This button has expired, please search again', show_alert=True)
 
-'''
-@Bot.on_callback_query()
-async def extra_handler(client, query):
-  try: 
-    await query.answer('This is an old button, please redo the search',
-       show_alert=True)
-  except:
-    pass
-'''
+# ========================
+# USER SETTINGS HANDLERS
+# ========================
 
-db_type = "uts"
-name = Vars.DB_NAME
+# User settings template
+users_txt = """
+<b>⚙️ <u>User Settings Panel</u></b>
+
+<blockquote>
+<b>🆔 User ID:</b> <code>{id}</code>
+
+<b>📝 File Name:</b> <code>{file_name}</code>
+<b>📝 File Name Length:</b> <code>{len}</code>
+
+<b>📋 Caption:</b> <code>{caption}</code>
+<b>🖼 Thumbnail:</b> <code>{thumb}</code>
+
+<b>📡 Dump Channel:</b> <code>{dump}</code>
+<b>📦 File Type:</b> <code>{type}</code>
+
+<b>🔢 Merge Size:</b> <code>{megre}</code>
+<b>🔍 Regex:</b> <code>{regex}</code>
+<b>🔐 Password:</b> <code>{password}</code>
+</blockquote>
+
+<b>📌 Banners:</b>
+<blockquote>
+<b>1:</b> <code>{banner1}</code>
+<b>2:</b> <code>{banner2}</code>
+</blockquote>
+"""
 
 @Bot.on_callback_query(filters.regex("mus"))
 async def main_user_panel(_, query):
-  user_id = str(query.from_user.id)
-  if not user_id in uts:
-    uts[user_id] = {}
-    sync(name, db_type)
+    """Main user settings panel"""
+    user_id = str(query.from_user.id)
+    
+    # Initialize user settings if not exists
+    if user_id not in uts:
+        uts[user_id] = {'setting': {}}
+        sync(Vars.DB_NAME, "uts")
 
-  if not "setting" in uts[user_id]:
-    uts[user_id]['setting'] = {}
-    sync(name, db_type)
+    settings = uts[user_id].get('setting', {})
+    
+    # Get thumbnail
+    thumb = settings.get("thumb")
+    if thumb and not thumb.startswith("http"):
+        thumb = "Custom" if thumb != "constant" else "Manga Poster"
+    
+    # Prepare settings text
+    txt = users_txt.format(
+        id=user_id,
+        file_name=settings.get("file_name", "Default"),
+        caption=settings.get("caption", "Default"),
+        thumb=thumb or "Random",
+        banner1=settings.get("banner1", "Not Set"),
+        banner2=settings.get("banner2", "Not Set"),
+        dump=settings.get("dump", "Not Set"),
+        type=", ".join(settings.get("type", [])) or "Not Set",
+        megre=settings.get("megre", "Not Set"),
+        regex=settings.get("regex", "Not Set"),
+        len=settings.get("file_name_len", "Not Set"),
+        password=settings.get("password", "Not Set"),
+    )
 
-  thumbnali = uts[user_id]['setting'].get("thumb", None)
-  banner1 = uts[user_id]['setting'].get("banner1", None)
-  banner2 = uts[user_id]['setting'].get("banner2", None)
+    # Prepare buttons
+    buttons = [
+        [
+            InlineKeyboardButton("📝 File Name", callback_data="ufn"),
+            InlineKeyboardButton("📋 Caption", callback_data="ucp")
+        ],
+        [
+            InlineKeyboardButton("🖼 Thumbnail", callback_data="uth"),
+            InlineKeyboardButton("🔍 Regex", callback_data="uregex")
+        ],
+        [
+            InlineKeyboardButton("📡 Dump Channel", callback_data="udc"),
+            InlineKeyboardButton("📦 File Type", callback_data="u_file_type")
+        ],
+        [
+            InlineKeyboardButton("🔢 Merge Size", callback_data="umegre"),
+            InlineKeyboardButton("🔐 Password", callback_data="upass")
+        ],
+        [
+            InlineKeyboardButton("📌 Banners", callback_data="ubn"),
+            InlineKeyboardButton("❌ Close", callback_data="close")
+        ]
+    ]
 
-  if thumbnali:
-    thumb = "True" if not thumbnali.startswith("http") else thumbnali
-  if banner1:
-    banner1 = "True" if not banner1.startswith("http") else banner1
-  if banner2:
-    banner2 = "True" if not banner2.startswith("http") else banner2
+    # Set thumbnail for display
+    display_thumb = settings.get("thumb") or random.choice(Vars.PICS)
+    if isinstance(display_thumb, str) and display_thumb.startswith("http"):
+        display_thumb = display_thumb
+    elif display_thumb == "constant":
+        display_thumb = random.choice(Vars.PICS)
+    
+    try:
+        await query.edit_message_media(InputMediaPhoto(display_thumb))
+    except Exception:
+        pass
 
-  txt = users_txt.format(
-      id=user_id,
-      file_name=uts[user_id]['setting'].get("file_name", "None"),
-      caption=uts[user_id]['setting'].get("caption", "None"),
-      thumb=thumb,
-      banner1=banner1,
-      banner2=banner2,
-      dump=uts[user_id]['setting'].get("dump", "None"),
-      type=uts[user_id]['setting'].get("type", "None"),
-      megre=uts[user_id]['setting'].get("megre", "None"),
-      regex=uts[user_id]['setting'].get("regex", "None"),
-      len=uts[user_id]['setting'].get("file_name_len", "None"),
-      password=uts[user_id]['setting'].get("password", "None"),
-  )
-  button = [
-    [
-        InlineKeyboardButton("🪦 File Name 🪦", callback_data="ufn"),
-        InlineKeyboardButton("🪦 Caption‌ 🪦", callback_data="ucp")
-    ],
-    [
-        InlineKeyboardButton("🪦 Thumbnali 🪦", callback_data="uth"),
-        InlineKeyboardButton("🪦 Regex 🪦", callback_data="uregex")
-    ],
-    [
-        InlineKeyboardButton("⚒ Banner ⚒", callback_data="ubn"),
-    ],
-    [
-        InlineKeyboardButton("⚙️ Password ⚙️", callback_data="upass"),
-        InlineKeyboardButton("⚙️ Megre Size ⚙️", callback_data="umegre")
-    ],
-    [
-        InlineKeyboardButton("⚒ File Type ⚒", callback_data="u_file_type"),
-    ],
-  ]
-  if not Vars.CONSTANT_DUMP_CHANNEL:
-    button[-1].append(InlineKeyboardButton("⚒ Dump Channel ⚒", callback_data="udc"))
-  
-  button.append([InlineKeyboardButton("❄️ Close ❄️", callback_data="close")])
-  if not thumbnali:
-    thumbnali = random.choice(Vars.PICS)
-  
-  try: await query.edit_message_media(InputMediaPhoto(thumbnali))
-  except: pass
+    try:
+        await query.edit_message_caption(
+            txt,
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        await query.edit_message_caption(
+            txt,
+            reply_markup=InlineKeyboardMarkup(buttons))
+    
+    await query.answer()
 
-  try:
-    await query.edit_message_caption(txt, reply_markup=InlineKeyboardMarkup(button))
-  except FloodWait as er:
-    await asyncio.sleep(er.value)
-    await query.edit_message_caption(txt, reply_markup=InlineKeyboardMarkup(button))
-
-  try: await query.answer()
-  except: pass
-
+# ========================
+# FILE NAME SETTINGS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^ufn"))
 async def file_name_handler(_, query):
-  user_id = str(query.from_user.id)
-  if not user_id in uts:
-    uts[user_id] = {}
-
-    uts[user_id]['setting'] = {}
-
-    sync(name, db_type)
-
-  file_name = uts[user_id]['setting'].get("file_name", None)
-  caption = uts[user_id]['setting'].get("caption", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  banner1 = uts[user_id]['setting'].get("banner1", None)
-  banner2 = uts[user_id]['setting'].get("banner2", None)
-  dump = uts[user_id]['setting'].get("dump", None)
-  type = uts[user_id]['setting'].get("type", None)
-  megre= uts[user_id]['setting'].get("megre", None)
-  regex = uts[user_id]['setting'].get("regex", None)
-  file_name_len = uts[user_id]['setting'].get("file_name_len", None)
-  password = uts[user_id]['setting'].get("password", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  if thumb:
-    thumb = "True" if not thumb.startswith("http") else thumb
-
-  button = [
-    [InlineKeyboardButton("📐 sᴇᴛ/ᴄʜᴀɴɢᴇ 📐", callback_data="ufn_change"), InlineKeyboardButton("🗑️ ᴅᴇʟᴇᴛᴇ 🗑️", callback_data="ufn_delete")],
-    [InlineKeyboardButton("📐 sᴇᴛ/ᴄʜᴀɴɢᴇ ʟᴇɴ 📐", callback_data="ufn_len_change"), InlineKeyboardButton("🗑️ ᴅᴇʟᴇᴛᴇ ʟᴇɴ 🗑️", callback_data="ufn_len_delete")],
-    [InlineKeyboardButton("🔙 ʙᴀᴄᴋ 🔙", callback_data="mus")]
-  ]
-  if query.data == "ufn":
-    txt = users_txt.format(
-      id = user_id,
-      file_name = file_name,
-      caption = caption,
-      thumb = thumb,
-      banner1 = banner1,
-      banner2 = banner2,
-      dump = dump,
-      type = type,
-      megre= megre,
-      regex = regex,
-      len = file_name_len,
-      password = password
-    )
-    await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-
-  elif query.data == "ufn_change":
-    try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-    except: pass
+    """Handle file name settings"""
+    user_id = str(query.from_user.id)
     
-    await retry_on_flood(query.edit_message_caption)("<b>📐 Send File Name 📐 \n<u><i>Params:</u></i>\n=><code>{manga_title}</code>: Manga Name \n=> <code>{chapter_num}</code>: Chapter Number</b>")
-    try:
-      call = await _.listen(user_id=int(user_id), timeout=60)
+    # Initialize user settings if not exists
+    if user_id not in uts:
+        uts[user_id] = {'setting': {}}
+        sync(Vars.DB_NAME, "uts")
 
-      uts[user_id]['setting']["file_name"] = call.text
-      sync(name, db_type)
-
-      txt = users_txt.format(
-        id = user_id,
-        file_name = call.text,
-        caption = caption,
-        thumb = thumb,
-        banner1 = banner1,
-        banner2 = banner2,
-        dump = dump,
-        type = type,
-        megre= megre,
-        regex = regex,
-        len = file_name_len,
-        password = password,
-      )
-      try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-      except: pass
-      
-      await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-      await call.delete()
-      
-      try: await query.answer("Sucessfully Added")
-      except: pass
-    except asyncio.TimeoutError:
-      txt = users_txt.format(
-        id = user_id,
-        file_name = file_name,
-        caption = caption,
-        thumb = thumb,
-        banner1 = banner1,
-        banner2 = banner2,
-        dump = dump,
-        type = type,
-        megre= megre,
-        regex = regex,
-        len = file_name_len,
-        password = password,
-      )
-      await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-
-  elif query.data == "ufn_delete":
-    if file_name:
-      uts[user_id]['setting']["file_name"] = None
-      sync(name, db_type)
-
-      txt = users_txt.format(
-        id = user_id,
-        file_name = "None",
-        caption = caption,
-        thumb = thumb,
-        banner1 = banner1,
-        banner2 = banner2,
-        dump = dump,
-        type = type,
-        megre= megre,
-        regex = regex,
-        len = file_name_len,
-        password = password,
-      )
-      
-      try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-      except: pass
-      
-      await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-      
-      try: await query.answer("Sucessfully Deleted")
-      except: pass
-    else:
-      await retry_on_flood(query.answer)("📐 𝒀𝒐𝒖 𝒉𝒂𝒔 𝒏𝒐𝒕 𝑺𝒆𝒕 𝑰𝒕 ! 📐", show_alert=True)
-
-  elif query.data == "ufn_len_change":
-    try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-    except: pass
+    settings = uts[user_id].get('setting', {})
     
-    await retry_on_flood(query.edit_message_caption)("<b>📐 Send File Name Len 📐\n Example: 15, 20, 50</b>")
-    try:
-      call = await _.listen(int(user_id), timeout=60)
-      try:
-        len_ch = int(call.text)
-        uts[user_id]['setting']["file_name_len"] = call.text
-        sync(name, db_type)
+    # Prepare buttons
+    buttons = [
+        [
+            InlineKeyboardButton("✏️ Set/Change", callback_data="ufn_change"),
+            InlineKeyboardButton("🗑️ Delete", callback_data="ufn_delete")
+        ],
+        [
+            InlineKeyboardButton("📏 Set Length", callback_data="ufn_len_change"),
+            InlineKeyboardButton("🗑️ Del Length", callback_data="ufn_len_delete")
+        ],
+        [
+            InlineKeyboardButton("🔙 Back", callback_data="mus")
+        ]
+    ]
+
+    if query.data == "ufn":
+        # Show current settings
+        await retry_on_flood(
+            query.edit_message_reply_markup,
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    
+    elif query.data == "ufn_change":
+        # Change file name pattern
+        await retry_on_flood(
+            query.edit_message_caption,
+            """<b>📝 Set File Name Pattern</b>
+
+<blockquote>
+<b>Available variables:</b>
+• <code>{manga_title}</code> - Manga name
+• <code>{chapter_num}</code> - Chapter number
+• <code>{group_name}</code> - Scanlation group
+
+<b>Example:</b>
+<code>{manga_title} - {chapter_num}</code>
+</blockquote>
+
+<i>Send your new file name pattern:</i>"""
+        )
         
-        file_name_len = int(call.text)
+        try:
+            response = await _.listen(user_id=int(user_id), timeout=60)
+            new_pattern = response.text
+            
+            uts[user_id]['setting']["file_name"] = new_pattern
+            sync(Vars.DB_NAME, "uts")
+            
+            await response.delete()
+            await query.answer("✅ File name pattern updated")
+            
+            # Update display
+            await main_user_panel(_, query)
+        except asyncio.TimeoutError:
+            await query.answer("⌛ Timed out waiting for response")
+    
+    elif query.data == "ufn_delete":
+        # Reset file name pattern
+        if "file_name" in uts[user_id]['setting']:
+            del uts[user_id]['setting']["file_name"]
+            sync(Vars.DB_NAME, "uts")
+            await query.answer("✅ File name pattern reset to default")
+        else:
+            await query.answer("ℹ️ No custom file name pattern set")
         
-        await call.delete()
-        await retry_on_flood(query.answer)("🤖 Sucessfully Added 🤖")
+        # Update display
+        await main_user_panel(_, query)
+    
+    elif query.data == "ufn_len_change":
+        # Change file name length limit
+        await retry_on_flood(
+            query.edit_message_caption,
+            """<b>📏 Set File Name Length Limit</b>
+
+<blockquote>
+Enter the maximum number of characters for file names
+(Recommended: between 20-100)
+
+<b>Example:</b> <code>50</code>
+</blockquote>
+
+<i>Send the new length limit:</i>"""
+        )
         
-      except ValueError:
-        await retry_on_flood(query.answer)("📐 ᴛʜɪs ɪs ɴᴏᴛ ᴀ ᴠᴀʟɪᴅ ɪɴᴛᴇɢᴇʀ 📐", show_alert=True)
-
-    except asyncio.TimeoutError:
-      await retry_on_flood(query.answer)("📐 ᴛɪᴍᴇᴏᴜᴛ 📐")
+        try:
+            response = await _.listen(user_id=int(user_id), timeout=60)
+            try:
+                length = int(response.text)
+                uts[user_id]['setting']["file_name_len"] = length
+                sync(Vars.DB_NAME, "uts")
+                
+                await response.delete()
+                await query.answer(f"✅ Length limit set to {length}")
+            except ValueError:
+                await query.answer("❌ Please enter a valid number", show_alert=True)
+            
+            # Update display
+            await main_user_panel(_, query)
+        except asyncio.TimeoutError:
+            await query.answer("⌛ Timed out waiting for response")
     
-    txt = users_txt.format(
-      id = user_id,
-      file_name = file_name,
-      caption = caption,
-      thumb = thumb,
-      banner1 = banner1,
-      banner2 = banner2,
-      dump = dump,
-      type = type,
-      megre= megre,
-      regex = regex,
-      len = file_name_len,
-      password = password,
-    )
-    try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-    except: pass
-    
-    await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-    
+    elif query.data == "ufn_len_delete":
+        # Reset file name length limit
+        if "file_name_len" in uts[user_id]['setting']:
+            del uts[user_id]['setting']["file_name_len"]
+            sync(Vars.DB_NAME, "uts")
+            await query.answer("✅ Length limit removed")
+        else:
+            await query.answer("ℹ️ No length limit set")
+        
+        # Update display
+        await main_user_panel(_, query)
 
-  elif query.data == "ufn_len_delete":
-    if file_name_len:
-      uts[user_id]['setting']["file_name_len"] = None
-      sync(name, db_type)
-
-      txt = users_txt.format(
-        id = user_id,
-        file_name = file_name,
-        caption = caption,
-        thumb = thumb,
-        banner1 = banner1,
-        banner2 = banner2,
-        dump = dump,
-        type = type,
-        megre= megre,
-        regex = regex,
-        len = "None",
-        password = password,
-      )
-      if not thumb:
-        try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-        except: pass
-      
-      await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-      await retry_on_flood(query.answer)("🤖 Sucessfully Deleted 🤖")
-    else:
-      await retry_on_flood(query.answer)("📐 𝒀𝒐𝒖 𝒉𝒂𝒔 𝒏𝒐𝒕 𝑺𝒆𝒕 𝑰𝒕 ! 📐", show_alert=True)
-
-  try: await query.answer()
-  except: pass
-
+# ========================
+# CAPTION SETTINGS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^ucp"))
 async def caption_handler(_, query):
-  user_id = str(query.from_user.id)
-  if not user_id in uts:
-    uts[user_id] = {}
-    sync(name, db_type)
+    """Handle caption settings"""
+    user_id = str(query.from_user.id)
+    
+    # Initialize user settings if not exists
+    if user_id not in uts:
+        uts[user_id] = {'setting': {}}
+        sync(Vars.DB_NAME, "uts")
 
-    uts[user_id]['setting'] = {}
-    sync(name, db_type)
-
-  file_name = uts[user_id]['setting'].get("file_name", None)
-  caption = uts[user_id]['setting'].get("caption", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  banner1 = uts[user_id]['setting'].get("banner1", None)
-  banner2 = uts[user_id]['setting'].get("banner2", None)
-  dump = uts[user_id]['setting'].get("dump", None)
-  type = uts[user_id]['setting'].get("type", None)
-  megre= uts[user_id]['setting'].get("megre", None)
-  regex = uts[user_id]['setting'].get("regex", None)
-  file_name_len = uts[user_id]['setting'].get("file_name_len", None)
-  password = uts[user_id]['setting'].get("password", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  if thumb:
-    thumb = "True" if not thumb.startswith("http") else thumb
-
-  button = [
-    [InlineKeyboardButton("📐 sᴇᴛ/ᴄʜᴀɴɢᴇ 📐", callback_data="ucp_change"), InlineKeyboardButton("🗑️ ᴅᴇʟᴇᴛᴇ 🗑️", callback_data="ucp_delete")],
-    [InlineKeyboardButton("🔙 ʙᴀᴄᴋ 🔙", callback_data="mus")]
-  ]
-
-  if query.data == "ucp":
-    await retry_on_flood(query.edit_message_reply_markup)(InlineKeyboardMarkup(button))
-
-  elif query.data == "ucp_change":
-    button = [
-      [InlineKeyboardButton("📐 sᴇᴛ/ᴄʜᴀɴɢᴇ 📐", callback_data="ucp_change"), InlineKeyboardButton("🗑️ ᴅᴇʟᴇᴛᴇ 🗑️", callback_data="ucp_delete")],
-      [InlineKeyboardButton("🔙 ʙᴀᴄᴋ 🔙", callback_data="mus")]
+    settings = uts[user_id].get('setting', {})
+    
+    # Prepare buttons
+    buttons = [
+        [
+            InlineKeyboardButton("✏️ Set/Change", callback_data="ucp_change"),
+            InlineKeyboardButton("🗑️ Delete", callback_data="ucp_delete")
+        ],
+        [
+            InlineKeyboardButton("🔙 Back", callback_data="mus")
+        ]
     ]
-    if not thumb:
-      try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-      except: pass
+
+    if query.data == "ucp":
+        # Show current settings
+        await retry_on_flood(
+            query.edit_message_reply_markup,
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
     
-    await retry_on_flood(query.edit_message_caption)("<b>📐 Send Caption 📐 \n<u>Note:</u> <blockquote>Use HTML Tags For Bold, Italic,etc</blockquote>\n<u>Params:</u>\n=><code>{manga_title}</code>: Manga Name \n=> <code>{chapter_num}</code>: Chapter Number\n<code>{file_name}</code>: File Name</b>")
-    try:
-      call = await _.listen(user_id=int(user_id), timeout=60)
+    elif query.data == "ucp_change":
+        # Change caption pattern
+        await retry_on_flood(
+            query.edit_message_caption,
+            """<b>📋 Set Caption Pattern</b>
 
-      uts[user_id]['setting']["caption"] = call.text
-      sync(name, db_type)
-      
-      caption = call.text
-      
-      await call.delete()
+<blockquote>
+<b>HTML Formatting Supported:</b>
+&lt;b&gt;Bold&lt;/b&gt;, &lt;i&gt;Italic&lt;/i&gt;, etc.
 
-    except asyncio.TimeoutError:
-      await retry_on_flood(query.answer)("📐 ᴛɪᴍᴇᴏᴜᴛ 📐")
+<b>Available variables:</b>
+• <code>{manga_title}</code> - Manga name
+• <code>{chapter_num}</code> - Chapter number
+• <code>{group_name}</code> - Scanlation group
+• <code{file_name}</code> - File name
 
-    except Exception as err:
-      await retry_on_flood(query.answer)(f"📐 {err} 📐", show_alert=True)
+<b>Example:</b>
+<code>&lt;b&gt;{manga_title}&lt;/b&gt;\nChapter {chapter_num}</code>
+</blockquote>
+
+<i>Send your new caption pattern:</i>"""
+        )
+        
+        try:
+            response = await _.listen(user_id=int(user_id), timeout=60)
+            new_caption = response.text
+            
+            uts[user_id]['setting']["caption"] = new_caption
+            sync(Vars.DB_NAME, "uts")
+            
+            await response.delete()
+            await query.answer("✅ Caption pattern updated")
+            
+            # Update display
+            await main_user_panel(_, query)
+        except asyncio.TimeoutError:
+            await query.answer("⌛ Timed out waiting for response")
     
-    txt = users_txt.format(
-      id=user_id,
-      file_name=file_name,
-      caption=caption,
-      thumb=thumb,
-      banner1=banner1,
-      banner2=banner2,
-      dump=dump,
-      type=type,
-      megre=megre,
-      regex=regex,
-      len=file_name_len,
-      password=password,
-    )
+    elif query.data == "ucp_delete":
+        # Reset caption pattern
+        if "caption" in uts[user_id]['setting']:
+            del uts[user_id]['setting']["caption"]
+            sync(Vars.DB_NAME, "uts")
+            await query.answer("✅ Caption pattern reset to default")
+        else:
+            await query.answer("ℹ️ No custom caption pattern set")
+        
+        # Update display
+        await main_user_panel(_, query)
 
-    if not thumb:
-      try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-      except: pass
-
-    await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-
-  elif query.data == "ucp_delete":
-    if caption:
-      uts[user_id]['setting']["caption"] = None
-      sync(name, db_type)
-
-      txt = users_txt.format(
-        id = user_id,
-        file_name = file_name,
-        caption = "None",
-        thumb = thumb,
-        banner1 = banner1,
-        banner2 = banner2,
-        dump = dump,
-        type = type,
-        megre= megre,
-        regex = regex,
-        len = file_name_len,
-        password = password,
-      )
-      if not thumb:
-        try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-        except: pass
-
-      await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-      await retry_on_flood(query.answer)("👻 Sucessfully Deleted 👻")
-      
-    else:
-      await retry_on_flood(query.answer)("📐 𝒀𝒐𝒖 𝒉𝒂𝒔 𝒏𝒐𝒕 𝑺𝒆𝒕 𝑰𝒕 ! 📐", show_alert=True)
-
-  try: await query.answer()
-  except: pass
-
+# ========================
+# THUMBNAIL SETTINGS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^uth"))
 async def thumb_handler(_, query):
-  user_id = str(query.from_user.id)
-  if not user_id in uts:
-    uts[user_id] = {}
-    sync(name, db_type)
+    """Handle thumbnail settings"""
+    user_id = str(query.from_user.id)
+    
+    # Initialize user settings if not exists
+    if user_id not in uts:
+        uts[user_id] = {'setting': {}}
+        sync(Vars.DB_NAME, "uts")
 
-    uts[user_id]['setting'] = {}
-    sync(name, db_type)
-
-  file_name = uts[user_id]['setting'].get("file_name", None)
-  caption = uts[user_id]['setting'].get("caption", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  banner1 = uts[user_id]['setting'].get("banner1", None)
-  banner2 = uts[user_id]['setting'].get("banner2", None)
-  dump = uts[user_id]['setting'].get("dump", None)
-  type = uts[user_id]['setting'].get("type", None)
-  megre= uts[user_id]['setting'].get("megre", None)
-  regex = uts[user_id]['setting'].get("regex", None)
-  file_name_len = uts[user_id]['setting'].get("file_name_len", None)
-  password = uts[user_id]['setting'].get("password", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  if thumb:
-    thumb = "True" if not thumb.startswith("http") else thumb
-  
-  button = [
-    [
-      InlineKeyboardButton("📐 SET/CHANGE 📐", callback_data="uth_change"),
-      InlineKeyboardButton("📐 CONSTANT 📐", callback_data="uth_constant")
-    ],
-    [
-      InlineKeyboardButton("🗑️ DELETE 🗑️", callback_data="uth_delete"),
-      InlineKeyboardButton("🔙 BACK 🔙", callback_data="mus"),
+    settings = uts[user_id].get('setting', {})
+    
+    # Prepare buttons
+    buttons = [
+        [
+            InlineKeyboardButton("🖼 Custom", callback_data="uth_change"),
+            InlineKeyboardButton("📚 Manga Poster", callback_data="uth_constant")
+        ],
+        [
+            InlineKeyboardButton("🗑️ Delete", callback_data="uth_delete"),
+            InlineKeyboardButton("🔙 Back", callback_data="mus"),
+        ]
     ]
-  ]
-  
-  if query.data == "uth":
-    txt = users_txt.format(
-      id = user_id,
-      file_name = file_name,
-      caption = caption,
-      thumb = thumb,
-      banner1 = banner1,
-      banner2 = banner2,
-      dump = dump,
-      type = type,
-      megre= megre,
-      regex = regex,
-      len = file_name_len,
-      password = password,
-    )
-    txt += "\n\n<blockquote><b>CONSTANT:- THE PARCTICULAR POSTER OF MANGA WILL ADDED AS FILE THUMBNALI</b></blockquote>"
     
-    if thumb:
-      try: await query.edit_message_media(InputMediaPhoto(thumb))
-      except: pass
-    else:
-      try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-      except: pass
+    if query.data == "uth":
+        # Show current settings
+        thumb_status = settings.get("thumb")
+        info_text = ""
+        
+        if thumb_status:
+            if thumb_status == "constant":
+                info_text = "<blockquote>Currently using manga posters as thumbnails</blockquote>"
+            elif thumb_status.startswith("http"):
+                info_text = "<blockquote>Custom thumbnail URL set</blockquote>"
+            else:
+                info_text = "<blockquote>Custom thumbnail image set</blockquote>"
+        
+        await retry_on_flood(
+            query.edit_message_caption,
+            f"""<b>🖼 Thumbnail Settings</b>
 
-    await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-  
-  elif query.data == "uth_constant":
-    uts[user_id]['setting']["thumb"] = "constant"
-    sync(name, db_type)
+{info_text}
+<i>Select an option below:</i>""",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
     
-    txt = users_txt.format(
-      id = user_id,
-      file_name = file_name,
-      caption = caption,
-      thumb = "constant",
-      banner1 = banner1,
-      banner2 = banner2,
-      dump = dump,
-      type = type,
-      megre= megre,
-      regex = regex,
-      len = file_name_len,
-      password = password
-    )
-    try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-    except: pass
+    elif query.data == "uth_constant":
+        # Set to use manga posters
+        uts[user_id]['setting']["thumb"] = "constant"
+        sync(Vars.DB_NAME, "uts")
+        
+        await query.answer("✅ Will use manga posters as thumbnails")
+        await main_user_panel(_, query)
     
-    await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-    await retry_on_flood(query.answer)("🎮 Sucessfully Added 🎮")
+    elif query.data == "uth_change":
+        # Set custom thumbnail
+        await retry_on_flood(
+            query.edit_message_caption,
+            """<b>🖼 Set Custom Thumbnail</b>
+
+<blockquote>
+You can send:
+• A photo (as document or image)
+• A direct URL to an image
+</blockquote>
+
+<i>Send your new thumbnail:</i>"""
+        )
+        
+        try:
+            response = await _.listen(user_id=int(user_id), timeout=60)
+            
+            if response.photo:
+                thumb = response.photo.file_id
+            elif response.document and response.document.mime_type.startswith('image/'):
+                thumb = response.document.file_id
+            elif response.text and response.text.startswith(('http://', 'https://')):
+                thumb = response.text
+            else:
+                await query.answer("❌ Invalid thumbnail format", show_alert=True)
+                return
+            
+            uts[user_id]['setting']["thumb"] = thumb
+            sync(Vars.DB_NAME, "uts")
+            
+            await response.delete()
+            await query.answer("✅ Thumbnail updated")
+            
+            # Update display
+            await main_user_panel(_, query)
+        except asyncio.TimeoutError:
+            await query.answer("⌛ Timed out waiting for response")
     
-  elif query.data == "uth_change":
-    await retry_on_flood(query.edit_message_caption)("<b>📐 Send Thumbnail 📐 \n<u>Note:</u> <blockquote>You Can Send Links or Images Docs.. </blockquote></b>")
-    try:
-      call = await _.listen(user_id=int(user_id), timeout=60)
-      call_type = call.photo or call.document or None
-      if call_type:
-        call_type = call_type.file_id
-        uts[user_id]['setting']["thumb"] = call_type
-        sync(name, db_type)
+    elif query.data == "uth_delete":
+        # Reset thumbnail
+        if "thumb" in uts[user_id]['setting']:
+            del uts[user_id]['setting']["thumb"]
+            sync(Vars.DB_NAME, "uts")
+            await query.answer("✅ Thumbnail reset to default")
+        else:
+            await query.answer("ℹ️ No custom thumbnail set")
+        
+        # Update display
+        await main_user_panel(_, query)
 
-      elif not call_type:
-        call_type = call.text
-        uts[user_id]['setting']["thumb"] = call_type
-        sync(name, db_type)
-
-      else:
-        await retry_on_flood(query.answer)("📐 ᴛʜɪs ɪs ɴᴏᴛ ᴀ ᴠᴀʟɪᴅ ᴛʜᴜᴍʙɴᴀɪʟ 📐", show_alert=True)
-        return
-
-      thumb = "True" if not str(call_type).startswith("http") else call_type
-
-      txt = users_txt.format(
-        id = user_id,
-        file_name = file_name,
-        caption = caption,
-        thumb = thumb,
-        banner1 = banner1,
-        banner2 = banner2,
-        dump = dump,
-        type = type,
-        megre= megre,
-        regex = regex,
-        len = file_name_len,
-        password = password,
-      )
-      if thumb:
-        try: await query.edit_message_media(InputMediaPhoto(thumb))
-        except: pass
-
-      await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-      
-      await call.delete()
-      await retry_on_flood(query.answer)("🎮 Sucessfully Added 🎮")
-    except asyncio.TimeoutError:
-      await retry_on_flood(query.answer)("📐 ᴛɪᴍᴇᴏᴜᴛ 📐")
-    except Exception as err:
-      await retry_on_flood(query.answer)(f"📐 {err} 📐", show_alert=True)
-
-  elif query.data == "uth_delete":
-    if thumb:
-      uts[user_id]['setting']["thumb"] = None
-      sync(name, db_type)
-
-      txt = users_txt.format(
-        id=user_id,
-        file_name=file_name,
-        caption=caption,
-        thumb="None",
-        banner1=banner1,
-        banner2=banner2,
-        dump=dump,
-        type=type,
-        megre=megre,
-        regex=regex,
-        len=file_name_len,
-        password=password,
-      )
-      
-      try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-      except: pass
-      await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-    else:
-      await retry_on_flood(query.answer)("📐 𝒀𝒐𝒖 𝒉𝒂𝒔 𝒏𝒐𝒕 𝑺𝒆𝒕 𝑰𝒕 ! 📐", show_alert=True)
-
-  try: await query.answer()
-  except: pass
-
+# ========================
+# BANNER SETTINGS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^ubn"))
 async def banner_handler(_, query):
-  user_id = str(query.from_user.id)
-
-  if not user_id in uts:
-    uts[user_id] = {}
-    sync(name, db_type)
-
-    uts[user_id]['setting'] = {}
-    sync(name, db_type)
-
-  file_name = uts[user_id]['setting'].get("file_name", None)
-  caption = uts[user_id]['setting'].get("caption", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  banner1 = uts[user_id]['setting'].get("banner1", None)
-  banner2 = uts[user_id]['setting'].get("banner2", None)
-  dump = uts[user_id]['setting'].get("dump", None)
-  type = uts[user_id]['setting'].get("type", None)
-  megre= uts[user_id]['setting'].get("megre", None)
-  regex = uts[user_id]['setting'].get("regex", None)
-  file_name_len = uts[user_id]['setting'].get("file_name_len", None)
-  password = uts[user_id]['setting'].get("password", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  if thumb:
-    thumb = "True" if not thumb.startswith("http") else thumb
-
-  button = [
-    [InlineKeyboardButton("📐 Set/Change 1 📐", callback_data="ubn_set1"), InlineKeyboardButton("🗑️ Delete 1 🗑️", callback_data="ubn_delete1")],
-    [InlineKeyboardButton("📐 Set/Change 2 📐", callback_data="ubn_set2"), InlineKeyboardButton("🗑️ Delete 2 🗑️", callback_data="ubn_delete2")],
-    [InlineKeyboardButton("🔙 ʙᴀᴄᴋ 🔙", callback_data="mus")]
-  ]
-  if query.data == "ubn":
-    await retry_on_flood(query.edit_message_reply_markup)(InlineKeyboardMarkup(button))
-
-  if query.data.startswith("ubn_set"):
-    if banner1:
-      try: await query.edit_message_media(InputMediaPhoto(banner1))
-      except: pass
-    elif banner2:
-      try: await query.edit_message_media(InputMediaPhoto(banner2))
-      except: pass
-    elif not thumb:
-      try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-      except: pass
+    """Handle banner settings"""
+    user_id = str(query.from_user.id)
     
-    await retry_on_flood(query.edit_message_caption)("<b>📐 Send Banner 📐 \n<u>Note:</u> <blockquote>You Can Send Links or Images Docs.. </blockquote></b>")
-    try:
-      call = await _.listen(user_id=int(user_id), timeout=60)
-      call_type = call.photo or call.document or None
-      if call_type:
-        banner = call.photo.file_id
-      elif not call_type:
-        banner = call.text
-      else:
-        await retry_on_flood(query.answer)("📐 ᴛʜɪs ɪs ɴᴏᴛ ᴀ ᴠᴀʟɪᴅ ᴛʜᴜᴍʙɴᴀɪʟ 📐")
-        return
+    # Initialize user settings if not exists
+    if user_id not in uts:
+        uts[user_id] = {'setting': {}}
+        sync(Vars.DB_NAME, "uts")
 
-      if query.data == "ubn_set1":
-        uts[user_id]['setting']["banner1"] = banner
-        sync(name, db_type)
+    settings = uts[user_id].get('setting', {})
+    
+    # Prepare buttons
+    buttons = [
+        [
+            InlineKeyboardButton("🖼 Banner 1", callback_data="ubn_set1"),
+            InlineKeyboardButton("🗑️ Delete 1", callback_data="ubn_delete1")
+        ],
+        [
+            InlineKeyboardButton("🖼 Banner 2", callback_data="ubn_set2"),
+            InlineKeyboardButton("🗑️ Delete 2", callback_data="ubn_delete2")
+        ],
+        [
+            InlineKeyboardButton("🔙 Back", callback_data="mus")
+        ]
+    ]
 
-        banner = banner if banner.startswith("http") else "True"
-        txt = users_txt.format(
-          id=user_id,
-          file_name=file_name,
-          caption=caption,
-          thumb=thumb,
-          banner1=banner,
-          banner2=banner2,
-          dump=dump,
-          type=type,
-          megre=megre,
-          regex=regex,
-          len=file_name_len,
-          password=password,
+    if query.data == "ubn":
+        # Show current settings
+        await retry_on_flood(
+            query.edit_message_reply_markup,
+            reply_markup=InlineKeyboardMarkup(buttons)
         )
+    
+    elif query.data.startswith("ubn_set"):
+        # Set banner image
+        banner_num = query.data[-1]
+        
+        await retry_on_flood(
+            query.edit_message_caption,
+            f"""<b>🖼 Set Banner {banner_num}</b>
 
-      elif query.data == "ubn_set2":
-        uts[user_id]['setting']["banner2"] = banner
-        sync(name, db_type)
+<blockquote>
+You can send:
+• A photo (as document or image)
+• A direct URL to an image
+</blockquote>
 
-        banner = banner if banner.startswith("http") else "True"
-        txt = users_txt.format(
-          id=user_id,
-          file_name=file_name,
-          caption=caption,
-          thumb=thumb,
-          banner1=banner1,
-          banner2=banner,
-          dump=dump,
-          type=type,
-          megre=megre,
-          regex=regex,
-          len=file_name_len,
-          password=password,
+<i>Send your new banner:</i>"""
         )
-        if not thumb:
-          try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-          except: pass
+        
+        try:
+            response = await _.listen(user_id=int(user_id), timeout=60)
+            
+            if response.photo:
+                banner = response.photo.file_id
+            elif response.document and response.document.mime_type.startswith('image/'):
+                banner = response.document.file_id
+            elif response.text and response.text.startswith(('http://', 'https://')):
+                banner = response.text
+            else:
+                await query.answer("❌ Invalid banner format", show_alert=True)
+                return
+            
+            uts[user_id]['setting'][f"banner{banner_num}"] = banner
+            sync(Vars.DB_NAME, "uts")
+            
+            await response.delete()
+            await query.answer(f"✅ Banner {banner_num} updated")
+            
+            # Update display
+            await main_user_panel(_, query)
+        except asyncio.TimeoutError:
+            await query.answer("⌛ Timed out waiting for response")
+    
+    elif query.data.startswith("ubn_delete"):
+        # Delete banner
+        banner_num = query.data[-1]
+        banner_key = f"banner{banner_num}"
+        
+        if banner_key in uts[user_id]['setting']:
+            del uts[user_id]['setting'][banner_key]
+            sync(Vars.DB_NAME, "uts")
+            await query.answer(f"✅ Banner {banner_num} removed")
+        else:
+            await query.answer(f"ℹ️ Banner {banner_num} not set")
+        
+        # Update display
+        await main_user_panel(_, query)
 
-        await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-    except asyncio.TimeoutError:
-      await retry_on_flood(query.answer)("📐 ᴛɪᴍᴇᴏᴜᴛ 📐")
-    except Exception as err:
-      await retry_on_flood(query.answer)(f"📐 {err} 📐", show_alert=True)
-
-  elif query.data == "ubn_delete1":
-    if banner1:
-        uts[user_id]['setting']["banner1"] = None
-        sync(name, db_type)
-
-        txt = users_txt.format(
-          id=user_id,
-          file_name=file_name,
-          caption=caption,
-          thumb=thumb,
-          banner1="None",
-          banner2=banner2,
-          dump=dump,
-          type=type,
-          megre=megre,
-          regex=regex,
-          len=file_name_len,
-          password=password,
-        )
-        if not thumb:
-          try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-          except: pass
-
-        await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-        await retry_on_flood(query.answer)("🎬 Sucessfully Deleted 🎬")
-    else:
-      await retry_on_flood(query.answer)("📐 𝒀𝒐𝒖 𝒉𝒂𝒔 𝒏𝒐𝒕 𝑺𝒆𝒕 𝑰𝒕 ! 📐", show_alert=True)
-
-  elif query.data == "ubn_delete2":
-    if banner2:
-      uts[user_id]['setting']["banner2"] = None
-      sync(name, db_type)
-
-      txt = users_txt.format(
-        id=user_id,
-        file_name=file_name,
-        caption=caption,
-        thumb=thumb,
-        banner1=banner1,
-        banner2="None",
-        dump=dump,
-        type=type,
-        megre=megre,
-        regex=regex,
-        len=file_name_len,
-        password=password,
-      )
-      if not thumb:
-        try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-        except: pass
-
-      await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-      await retry_on_flood(query.answer)("🎬 Sucessfully Deleted 🎬")
-    else:
-      await retry_on_flood(query.answer)("📐 𝒀𝒐𝒖 𝒉𝒂𝒔 𝒏𝒐𝒕 𝑺𝒆𝒕 𝑰𝒕 ! 📐", show_alert=True)
-
-  try: await query.answer()
-  except: pass
+# ========================
+# DUMP CHANNEL SETTINGS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^udc"))
 async def dump_handler(_, query):
-  user_id = str(query.from_user.id)
-  if not user_id in uts:
-    uts[user_id] = {}
-    sync(name, db_type)
+    """Handle dump channel settings"""
+    if Vars.CONSTANT_DUMP_CHANNEL:
+        return await query.answer("❌ Dump channel is fixed by admin", show_alert=True)
 
-    uts[user_id]['setting'] = {}
-    sync(name, db_type)
+    user_id = str(query.from_user.id)
+    
+    # Initialize user settings if not exists
+    if user_id not in uts:
+        uts[user_id] = {'setting': {}}
+        sync(Vars.DB_NAME, "uts")
 
-  file_name = uts[user_id]['setting'].get("file_name", None)
-  caption = uts[user_id]['setting'].get("caption", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  banner1 = uts[user_id]['setting'].get("banner1", None)
-  banner2 = uts[user_id]['setting'].get("banner2", None)
-  dump = uts[user_id]['setting'].get("dump", None)
-  type = uts[user_id]['setting'].get("type", None)
-  megre= uts[user_id]['setting'].get("megre", None)
-  regex = uts[user_id]['setting'].get("regex", None)
-  file_name_len = uts[user_id]['setting'].get("file_name_len", None)
-  password = uts[user_id]['setting'].get("password", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  if thumb:
-    thumb = "True" if not thumb.startswith("http") else thumb
+    settings = uts[user_id].get('setting', {})
+    
+    # Prepare buttons
+    buttons = [
+        [
+            InlineKeyboardButton("✏️ Set/Change", callback_data="udc_change"),
+            InlineKeyboardButton("🗑️ Delete", callback_data="udc_delete")
+        ],
+        [
+            InlineKeyboardButton("🔙 Back", callback_data="mus")
+        ]
+    ]
 
-  button = [
-    [InlineKeyboardButton("📐 sᴇᴛ/ᴄʜᴀɴɢᴇ 📐", callback_data="udc_change"), InlineKeyboardButton("🗑️ ᴅᴇʟᴇᴛᴇ 🗑️", callback_data="udc_delete")],
-    [InlineKeyboardButton("🔙 ʙᴀᴄᴋ 🔙", callback_data="mus")]
-  ]
-  if query.data == "udc":
-    await retry_on_flood(query.edit_message_reply_markup)(InlineKeyboardMarkup(button))
-  elif query.data == "udc_change":
-    await retry_on_flood(query.edit_message_caption)("<b>📐 Send Dump Channel 📐 \n<u>Note:</u> <blockquote>You Can Send Username(without @) or Channel Id or Forward Message from Channel.. </blockquote></b>")
-    try:
-      call = await _.listen(user_id=int(user_id), timeout=60)
-      if call.text:
-        dump = call.text
-      elif call.forward_from_chat:
-        dump = call.forward_from_chat.id
+    if query.data == "udc":
+        # Show current settings
+        await retry_on_flood(
+            query.edit_message_reply_markup,
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    
+    elif query.data == "udc_change":
+        # Change dump channel
+        await retry_on_flood(
+            query.edit_message_caption,
+            """<b>📡 Set Dump Channel</b>
 
-      uts[user_id]['setting']["dump"] = dump
-      sync(name, db_type)
-      
-      txt = users_txt.format(
-          id=user_id,
-          file_name=file_name,
-          caption=caption,
-          thumb=thumb,
-          banner1=banner1,
-          banner2=banner2,
-          dump=dump,
-          type=type,
-          megre=megre,
-          regex=regex,
-          len=file_name_len,
-          password=password,
-      )
-      if not thumb:
-        try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-        except: pass
+<blockquote>
+You can send:
+• Channel username (without @)
+• Channel ID
+• Forward a message from the channel
+</blockquote>
 
-      await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-      await call.delete()
-      await retry_on_flood(query.answer)("🎬 Sucessfully Added 🎬")
-    except asyncio.TimeoutError:
-      await retry_on_flood(query.answer)("📐 ᴛɪᴍᴇᴏᴜᴛ 📐")
-    except Exception as err:
-      await retry_on_flood(query.answer)(f"📐 {err} 📐", show_alert=True)
-  elif query.data == "udc_delete":
-    if dump:
-      uts[user_id]['setting']["dump"] = None
-      sync(name, db_type)
-      
-      txt = users_txt.format(
-        id=user_id,
-        file_name=file_name,
-        caption=caption,
-        thumb=thumb,
-        banner1=banner1,
-        banner2=banner2,
-        dump="None",
-        type=type,
-        megre=megre,
-        regex=regex,
-        len=file_name_len,
-        password=password,
-      )
-      if not thumb:
-        try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-        except: pass
-      
-      await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-      await retry_on_flood(query.answer)("🎲 Sucessfully Deleted 🎲")
-    else:
-      await retry_on_flood(query.answer)("📐 𝒀𝒐𝒖 𝒉𝒂𝒔 𝒏𝒐𝒕 𝑺𝒆𝒕 𝑰𝒕 ! 📐", show_alert=True)
+<i>Send your dump channel:</i>"""
+        )
+        
+        try:
+            response = await _.listen(user_id=int(user_id), timeout=60)
+            
+            if response.text:
+                dump = response.text
+            elif response.forward_from_chat:
+                dump = response.forward_from_chat.id
+            else:
+                await query.answer("❌ Invalid channel format", show_alert=True)
+                return
+            
+            uts[user_id]['setting']["dump"] = dump
+            sync(Vars.DB_NAME, "uts")
+            
+            await response.delete()
+            await query.answer("✅ Dump channel updated")
+            
+            # Update display
+            await main_user_panel(_, query)
+        except asyncio.TimeoutError:
+            await query.answer("⌛ Timed out waiting for response")
+    
+    elif query.data == "udc_delete":
+        # Reset dump channel
+        if "dump" in uts[user_id]['setting']:
+            del uts[user_id]['setting']["dump"]
+            sync(Vars.DB_NAME, "uts")
+            await query.answer("✅ Dump channel removed")
+        else:
+            await query.answer("ℹ️ No dump channel set")
+        
+        # Update display
+        await main_user_panel(_, query)
 
-  try: await query.answer()
-  except: pass
+# ========================
+# FILE TYPE SETTINGS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^u_file_type"))
 async def type_handler(_, query):
-  user_id = str(query.from_user.id)
-  if not user_id in uts:
-    uts[user_id] = {}
-    sync(name, db_type)
+    """Handle file type settings"""
+    user_id = str(query.from_user.id)
+    
+    # Initialize user settings if not exists
+    if user_id not in uts:
+        uts[user_id] = {'setting': {}}
+        sync(Vars.DB_NAME, "uts")
 
-    uts[user_id]['setting'] = {}
-    sync(name, db_type)
+    # Ensure type list exists
+    if "type" not in uts[user_id]['setting']:
+        uts[user_id]['setting']["type"] = []
+        sync(Vars.DB_NAME, "uts")
 
-  file_name = uts[user_id]['setting'].get("file_name", None)
-  caption = uts[user_id]['setting'].get("caption", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  banner1 = uts[user_id]['setting'].get("banner1", None)
-  banner2 = uts[user_id]['setting'].get("banner2", None)
-  dump = uts[user_id]['setting'].get("dump", None)
-  type = uts[user_id]['setting'].get("type", None)
-  megre= uts[user_id]['setting'].get("megre", None)
-  regex = uts[user_id]['setting'].get("regex", None)
-  file_name_len = uts[user_id]['setting'].get("file_name_len", None)
-  password = uts[user_id]['setting'].get("password", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  if thumb:
-    thumb = "True" if not thumb.startswith("http") else thumb
-
-  if not "type" in uts[user_id]['setting']:
-    uts[user_id]['setting']["type"] = []
-    sync(name, db_type)
-
-  type = uts[user_id].get("setting", {}).get("type", [])
-
-  button = [[]]
-  if "PDF" in type:
-    button[0].append(InlineKeyboardButton("📙 PDF 📙", callback_data="u_file_type_pdf"))
-  else:
-    button[0].append(InlineKeyboardButton("❗PDF ❗", callback_data="u_file_type_pdf"))
-  if "CBZ" in type:
-    button[0].append(InlineKeyboardButton("📂 CBZ 📂", callback_data="u_file_type_cbz"))
-  else:
-    button[0].append(InlineKeyboardButton("❗CBZ ❗", callback_data="u_file_type_cbz"))
-
-  button.append([InlineKeyboardButton("🔙 ʙᴀᴄᴋ 🔙", callback_data="mus")])
-
-  if query.data == "u_file_type":
-    await retry_on_flood(query.edit_message_reply_markup)(InlineKeyboardMarkup(button))
-
-  elif query.data == "u_file_type_pdf":
-    if "PDF" in type:
-      uts[user_id]['setting']["type"].remove("PDF")
-      sync(name, db_type)
-
-      button[0][0] = InlineKeyboardButton("❗PDF ❗", callback_data="u_file_type_pdf")
-
+    current_types = uts[user_id]['setting'].get("type", [])
+    
+    # Prepare buttons
+    buttons = [[]]
+    
+    # PDF button
+    if "PDF" in current_types:
+        buttons[0].append(InlineKeyboardButton("✅ PDF", callback_data="u_file_type_pdf"))
     else:
-      uts[user_id]['setting']["type"].append("PDF")
-      sync(name, db_type)
-
-      button[0][0] = InlineKeyboardButton("📙 PDF 📙", callback_data="u_file_type_pdf")
-
-    type = uts[user_id].get("setting", {}).get("type", "None")
-    txt = users_txt.format(
-      id=user_id,
-      file_name=file_name,
-      caption=caption,
-      thumb=thumb,
-      banner1=banner1,
-      banner2=banner2,
-      dump=dump,
-      type=type,
-      megre=megre,
-      regex=regex,
-      len=file_name_len,
-      password=password,
-    )
-    if not thumb:
-      try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-      except: pass
-
-    await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-
-  elif query.data == "u_file_type_cbz":
-    if "CBZ" in type:
-      uts[user_id]['setting']["type"].remove("CBZ")
-      sync(name, db_type)
-
-      button[0][1] = InlineKeyboardButton("❗CBZ ❗", callback_data="u_file_type_cbz")
-
+        buttons[0].append(InlineKeyboardButton("❌ PDF", callback_data="u_file_type_pdf"))
+    
+    # CBZ button
+    if "CBZ" in current_types:
+        buttons[0].append(InlineKeyboardButton("✅ CBZ", callback_data="u_file_type_cbz"))
     else:
-      uts[user_id]['setting']["type"].append("CBZ")
-      sync(name, db_type)
+        buttons[0].append(InlineKeyboardButton("❌ CBZ", callback_data="u_file_type_cbz"))
+    
+    buttons.append([InlineKeyboardButton("🔙 Back", callback_data="mus")])
 
-      button[0][1] = InlineKeyboardButton("📂 CBZ 📂", callback_data="u_file_type_cbz")
+    if query.data == "u_file_type":
+        # Show current settings
+        await retry_on_flood(
+            query.edit_message_reply_markup,
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    
+    elif query.data.endswith("_pdf"):
+        # Toggle PDF
+        if "PDF" in current_types:
+            uts[user_id]['setting']["type"].remove("PDF")
+            sync(Vars.DB_NAME, "uts")
+            await query.answer("❌ PDF disabled")
+        else:
+            uts[user_id]['setting']["type"].append("PDF")
+            sync(Vars.DB_NAME, "uts")
+            await query.answer("✅ PDF enabled")
+        
+        # Update display
+        await main_user_panel(_, query)
+    
+    elif query.data.endswith("_cbz"):
+        # Toggle CBZ
+        if "CBZ" in current_types:
+            uts[user_id]['setting']["type"].remove("CBZ")
+            sync(Vars.DB_NAME, "uts")
+            await query.answer("❌ CBZ disabled")
+        else:
+            uts[user_id]['setting']["type"].append("CBZ")
+            sync(Vars.DB_NAME, "uts")
+            await query.answer("✅ CBZ enabled")
+        
+        # Update display
+        await main_user_panel(_, query)
 
-    type = uts[user_id].get("setting", {}).get("type", "None")
-    txt = users_txt.format(
-      id=user_id,
-      file_name=file_name,
-      caption=caption,
-      thumb=thumb,
-      banner1=banner1,
-      banner2=banner2,
-      dump=dump,
-      type=type,
-      megre=megre,
-      regex=regex,
-      len=file_name_len,
-      password=password,
-    )
-    if not thumb:
-      try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-      except: pass
-
-    await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-
-  try: await query.answer()
-  except: pass
+# ========================
+# MERGE SIZE SETTINGS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^umegre"))
 async def megre_handler(_, query):
-  user_id = str(query.from_user.id)
-  if not user_id in uts:
-    uts[user_id] = {}
-    sync(name, db_type)
-
-    uts[user_id]['setting'] = {}
-    sync(name, db_type)
-
-  file_name = uts[user_id]['setting'].get("file_name", None)
-  caption = uts[user_id]['setting'].get("caption", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  banner1 = uts[user_id]['setting'].get("banner1", None)
-  banner2 = uts[user_id]['setting'].get("banner2", None)
-  dump = uts[user_id]['setting'].get("dump", None)
-  type = uts[user_id]['setting'].get("type", None)
-  megre= uts[user_id]['setting'].get("megre", None)
-  regex = uts[user_id]['setting'].get("regex", None)
-  file_name_len = uts[user_id]['setting'].get("file_name_len", None)
-  password = uts[user_id]['setting'].get("password", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  if thumb:
-    thumb = "True" if not thumb.startswith("http") else thumb
-  button = [
-    [InlineKeyboardButton("📐 sᴇᴛ/ᴄʜᴀɴɢᴇ 📐", callback_data="umegre_change"), InlineKeyboardButton("🗑️ ᴅᴇʟᴇᴛᴇ 🗑️", callback_data="umegre_delete")],
-    [InlineKeyboardButton("🔙 ʙᴀᴄᴋ 🔙", callback_data="mus")]
-  ]
-  if query.data == "umegre":
-    await retry_on_flood(query.edit_message_reply_markup)(InlineKeyboardMarkup(button))
-
-  elif query.data == "umegre_change":
-    if not thumb:
-      try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-      except: pass
+    """Handle merge size settings"""
+    user_id = str(query.from_user.id)
     
-    await retry_on_flood(query.edit_message_caption)("<b>📐 Send Megre Size 📐 \n<u>Note:</u> <blockquote>It's Number For Megre. i.e 2, 3 ,4 ,5,etc </blockquote></b>")
-    try:
-      call = await _.listen(user_id=int(user_id), timeout=60)
-      call_int = int(call.text)
+    # Initialize user settings if not exists
+    if user_id not in uts:
+        uts[user_id] = {'setting': {}}
+        sync(Vars.DB_NAME, "uts")
 
-      uts[user_id]['setting']["megre"] = call.text
-      sync(name, db_type)
-      
-      megre = call.text 
-      await call.delete()
-    except ValueError:
-      await retry_on_flood(query.answer)("📐 ᴛʜɪs ɪs ɴᴏᴛ ᴀ ᴠᴀʟɪᴅ ɪɴᴛᴇɢᴇʀ 📐", show_alert=True)
-    except asyncio.TimeoutError:
-      await retry_on_flood(query.answer)("📐 ᴛɪᴍᴇᴏᴜᴛ 📐")
-    except Exception as err:
-      await retry_on_flood(query.answer)(f"📐 {err} 📐", show_alert=True)
+    settings = uts[user_id].get('setting', {})
     
-    txt = users_txt.format(
-      id=user_id,
-      file_name=file_name,
-      caption=caption,
-      thumb=thumb,
-      banner1=banner1,
-      banner2=banner2,
-      dump=dump,
-      type=type,
-      megre=megre,
-      regex=regex,
-      len=file_name_len,
-      password=password,
-    )
-    if not thumb:
-      try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-      except: pass
+    # Prepare buttons
+    buttons = [
+        [
+            InlineKeyboardButton("✏️ Set/Change", callback_data="umegre_change"),
+            InlineKeyboardButton("🗑️ Delete", callback_data="umegre_delete")
+        ],
+        [
+            InlineKeyboardButton("🔙 Back", callback_data="mus")
+        ]
+    ]
 
-    await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-    await retry_on_flood(query.answer)("🎬 Sucessfully Added 🎬")
+    if query.data == "umegre":
+        # Show current settings
+        await retry_on_flood(
+            query.edit_message_reply_markup,
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    
+    elif query.data == "umegre_change":
+        # Change merge size
+        await retry_on_flood(
+            query.edit_message_caption,
+            """<b>🔢 Set Merge Size</b>
 
-  elif query.data == "umegre_delete":
-    if megre:
-      uts[user_id]['setting']["megre"] = None
-      sync(name, db_type)
+<blockquote>
+Number of chapters to merge into one file
+(Recommended: between 2-10)
 
-      txt = users_txt.format(
-        id=user_id,
-        file_name=file_name,
-        caption=caption,
-        thumb=thumb,
-        banner1=banner1,
-        banner2=banner2,
-        dump=dump,
-        type=type,
-        megre="None",
-        regex=regex,
-        len=file_name_len,
-        password=password,
-      )
+<b>Example:</b> <code>5</code> (will merge 5 chapters per file)
+</blockquote>
 
-      if not thumb:
-        try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-        except: pass
+<i>Send the new merge size:</i>"""
+        )
+        
+        try:
+            response = await _.listen(user_id=int(user_id), timeout=60)
+            try:
+                size = int(response.text)
+                if size <= 0:
+                    raise ValueError
+                
+                uts[user_id]['setting']["megre"] = size
+                sync(Vars.DB_NAME, "uts")
+                
+                await response.delete()
+                await query.answer(f"✅ Merge size set to {size}")
+            except ValueError:
+                await query.answer("❌ Please enter a positive number", show_alert=True)
+            
+            # Update display
+            await main_user_panel(_, query)
+        except asyncio.TimeoutError:
+            await query.answer("⌛ Timed out waiting for response")
+    
+    elif query.data == "umegre_delete":
+        # Reset merge size
+        if "megre" in uts[user_id]['setting']:
+            del uts[user_id]['setting']["megre"]
+            sync(Vars.DB_NAME, "uts")
+            await query.answer("✅ Merge size reset")
+        else:
+            await query.answer("ℹ️ No merge size set")
+        
+        # Update display
+        await main_user_panel(_, query)
 
-      await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-      await retry_on_flood(query.answer)("🎬 Sucessfully Deleted 🎬")
-    else:
-      await retry_on_flood(query.answer)("📐 𝒀𝒐𝒖 𝒉𝒂𝒔 𝒏𝒐𝒕 𝑺𝒆𝒕 𝑰𝒕 ! 📐", show_alert=True)
-
-  try: await query.answer()
-  except: pass
+# ========================
+# PASSWORD SETTINGS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^upass"))
 async def password_handler(_, query):
-  user_id = str(query.from_user.id)
-  if not user_id in uts:
-    uts[user_id] = {}
-    sync(name, db_type)
-    uts[user_id]['setting'] = {}
-    sync(name, db_type)
-
-  file_name = uts[user_id]['setting'].get("file_name", None)
-  caption = uts[user_id]['setting'].get("caption", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  banner1 = uts[user_id]['setting'].get("banner1", None)
-  banner2 = uts[user_id]['setting'].get("banner2", None)
-  dump = uts[user_id]['setting'].get("dump", None)
-  type = uts[user_id]['setting'].get("type", None)
-  megre= uts[user_id]['setting'].get("megre", None)
-  regex = uts[user_id]['setting'].get("regex", None)
-  file_name_len = uts[user_id]['setting'].get("file_name_len", None)
-  password = uts[user_id]['setting'].get("password", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  if thumb:
-    thumb = "True" if not thumb.startswith("http") else thumb
-
-  button = [
-    [InlineKeyboardButton("📐 sᴇᴛ/ᴄʜᴀɴɢᴇ 📐", callback_data="upass_change"), InlineKeyboardButton("🗑️ ᴅᴇʟᴇᴛᴇ 🗑️", callback_data="upass_delete")],
-    [InlineKeyboardButton("🔙 ʙᴀᴄᴋ 🔙", callback_data="mus")]
-  ]
-
-  if query.data == "upass":
-    await retry_on_flood(query.edit_message_reply_markup)(InlineKeyboardMarkup(button))
-  elif query.data == "upass_change":
-    await retry_on_flood(query.edit_message_caption)("<b>📐 Send Password 📐 \n<u>Note:</u> <blockquote>It's Password For PDF.</blockquote></b>")
-    try:
-      call = await _.listen(user_id=int(user_id), timeout=60)
-      password = call.text
-      
-      uts[user_id]['setting']["password"] = password
-      sync(name, db_type)
-      
-      await call.delete()
-    except asyncio.TimeoutError:
-      await retry_on_flood(query.answer)("📐 ᴛɪᴍᴇᴏᴜᴛ 📐")
-    except Exception as err:
-      await retry_on_flood(query.answer)(f"📐 {err} 📐", show_alert=True)
+    """Handle PDF password settings"""
+    user_id = str(query.from_user.id)
     
-    txt = users_txt.format(
-      id=user_id,
-      file_name=file_name,
-      caption=caption,
-      thumb=thumb,
-      banner1=banner1,
-      banner2=banner2,
-      dump=dump,
-      type=type,
-      megre=megre,
-      regex=regex,
-      len=file_name_len,
-      password=password,
-    )
-    if not thumb:
-      try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-      except: pass
+    # Initialize user settings if not exists
+    if user_id not in uts:
+        uts[user_id] = {'setting': {}}
+        sync(Vars.DB_NAME, "uts")
 
-    await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-    await retry_on_flood(query.answer)("🎼 Sucessfully Added 🎼")
+    settings = uts[user_id].get('setting', {})
+    
+    # Prepare buttons
+    buttons = [
+        [
+            InlineKeyboardButton("✏️ Set/Change", callback_data="upass_change"),
+            InlineKeyboardButton("🗑️ Delete", callback_data="upass_delete")
+        ],
+        [
+            InlineKeyboardButton("🔙 Back", callback_data="mus")
+        ]
+    ]
 
-  elif query.data == "upass_delete":
-    if password:
-      uts[user_id]['setting']["password"] = None
-      sync(name, db_type)
+    if query.data == "upass":
+        # Show current settings
+        await retry_on_flood(
+            query.edit_message_reply_markup,
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    
+    elif query.data == "upass_change":
+        # Change password
+        await retry_on_flood(
+            query.edit_message_caption,
+            """<b>🔐 Set PDF Password</b>
 
-      txt = users_txt.format(
-        id=user_id,
-        file_name=file_name,
-        caption=caption,
-        thumb=thumb,
-        banner1=banner1,
-        banner2=banner2,
-        dump=dump,
-        type=type,
-        megre=megre,
-        regex=regex,
-        len=file_name_len,
-        password="None",
-      )
-      if not thumb:
-        try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-        except: pass
+<blockquote>
+Password to protect generated PDF files
+(Leave empty to disable password protection)
 
-      await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-    else:
-      await retry_on_flood(query.answer)("📐 𝒀𝒐𝒖 𝒉𝒂𝒔 𝒏𝒐𝒕 𝑺𝒆𝒕 𝑰𝒕 ! 📐", show_alert=True)
+<b>Note:</b> Passwords cannot contain spaces
+</blockquote>
 
-  try: await query.answer()
-  except: pass
+<i>Send the new password:</i>"""
+        )
+        
+        try:
+            response = await _.listen(user_id=int(user_id), timeout=60)
+            password = response.text.strip()
+            
+            if " " in password:
+                await query.answer("❌ Password cannot contain spaces", show_alert=True)
+            else:
+                uts[user_id]['setting']["password"] = password or None
+                sync(Vars.DB_NAME, "uts")
+                
+                await response.delete()
+                if password:
+                    await query.answer("✅ Password set")
+                else:
+                    await query.answer("✅ Password removed")
+            
+            # Update display
+            await main_user_panel(_, query)
+        except asyncio.TimeoutError:
+            await query.answer("⌛ Timed out waiting for response")
+    
+    elif query.data == "upass_delete":
+        # Reset password
+        if "password" in uts[user_id]['setting']:
+            del uts[user_id]['setting']["password"]
+            sync(Vars.DB_NAME, "uts")
+            await query.answer("✅ Password removed")
+        else:
+            await query.answer("ℹ️ No password set")
+        
+        # Update display
+        await main_user_panel(_, query)
+
+# ========================
+# REGEX SETTINGS
+# ========================
 
 @Bot.on_callback_query(filters.regex("^uregex"))
 async def regex_handler(_, query):
-  user_id = str(query.from_user.id)
-  if not user_id in uts:
-    uts[user_id] = {}
-    sync(name, db_type)
+    """Handle regex settings"""
+    user_id = str(query.from_user.id)
+    
+    # Initialize user settings if not exists
+    if user_id not in uts:
+        uts[user_id] = {'setting': {}}
+        sync(Vars.DB_NAME, "uts")
 
-    uts[user_id]['setting'] = {}
-    sync(name, db_type)
+    settings = uts[user_id].get('setting', {})
+    
+    # Prepare buttons
+    buttons = [
+        [InlineKeyboardButton(f"{'✅' if settings.get('regex') == str(i) else '❌'} {i}", 
+         callback_data=f"uregex_set_{i}") for i in range(1, 5)],
+        [
+            InlineKeyboardButton("🗑️ Delete", callback_data="uregex_delete"),
+            InlineKeyboardButton("🔙 Back", callback_data="mus")
+        ]
+    ]
 
-  file_name = uts[user_id]['setting'].get("file_name", None)
-  caption = uts[user_id]['setting'].get("caption", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  banner1 = uts[user_id]['setting'].get("banner1", None)
-  banner2 = uts[user_id]['setting'].get("banner2", None)
-  dump = uts[user_id]['setting'].get("dump", None)
-  type = uts[user_id]['setting'].get("type", None)
-  megre= uts[user_id]['setting'].get("megre", None)
-  regex = uts[user_id]['setting'].get("regex", None)
-  file_name_len = uts[user_id]['setting'].get("file_name_len", None)
-  password = uts[user_id]['setting'].get("password", None)
-  thumb = uts[user_id]['setting'].get("thumb", None)
-  if thumb:
-    thumb = "True" if not thumb.startswith("http") else thumb
+    if query.data == "uregex":
+        # Show current settings
+        await retry_on_flood(
+            query.edit_message_reply_markup,
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    
+    elif query.data.startswith("uregex_set"):
+        # Set regex pattern
+        pattern_num = query.data.split("_")[-1]
+        uts[user_id]['setting']["regex"] = pattern_num
+        sync(Vars.DB_NAME, "uts")
+        
+        await query.answer(f"✅ Regex pattern {pattern_num} selected")
+        await main_user_panel(_, query)
+    
+    elif query.data == "uregex_delete":
+        # Reset regex
+        if "regex" in uts[user_id]['setting']:
+            del uts[user_id]['setting']["regex"]
+            sync(Vars.DB_NAME, "uts")
+            await query.answer("✅ Regex pattern removed")
+        else:
+            await query.answer("ℹ️ No regex pattern set")
+        
+        # Update display
+        await main_user_panel(_, query)
 
-  button = [
-    [InlineKeyboardButton(i, callback_data=f"uregex_set_{i}") for i in range(1, 5)],
-    [InlineKeyboardButton("🗑️ ᴅᴇʟᴇᴛᴇ 🗑️", callback_data="uregex_delete")],
-    [InlineKeyboardButton("🔙 ʙᴀᴄᴋ 🔙", callback_data="mus")]
-  ]
-  if query.data == "uregex":
-    await retry_on_flood(query.edit_message_reply_markup)(InlineKeyboardMarkup(button))
-  elif query.data.startswith("uregex_set"):
-    regex = query.data.split("_")[-1]
+# ========================
+# FALLBACK HANDLER
+# ========================
 
-    uts[user_id]['setting'][f"regex"] = regex
-    sync(name, db_type)
-
-    txt = users_txt.format(
-        id=user_id,
-        file_name=file_name,
-        caption=caption,
-        thumb=thumb,
-        banner1=banner1,
-        banner2=banner2,
-        dump=dump,
-        type=type,
-        megre=megre,
-        regex=regex,
-        len=file_name_len,
-        password=password,
-    )
-    if not thumb:
-      try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-      except: pass
-
-    await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-  elif query.data == "uregex_delete":
-    if regex:
-      uts[user_id]['setting']["regex"] = None
-      sync(name, db_type)
-
-      txt = users_txt.format(
-        id=user_id,
-        file_name=file_name,
-        caption=caption,
-        thumb=thumb,
-        banner1=banner1,
-        banner2=banner2,
-        dump=dump,
-        type=type,
-        megre=megre,
-        regex="None",
-        len=file_name_len,
-        password=password,
-      )
-      if not thumb:
-        try: await query.edit_message_media(InputMediaPhoto(random.choice(Vars.PICS)))
-        except: pass
-
-      await retry_on_flood(query.edit_message_caption)(txt, reply_markup=InlineKeyboardMarkup(button))
-    else:
-      await retry_on_flood(query.answer)("📐 𝒀𝒐𝒖 𝒉𝒂𝒔 𝒏𝒐𝒕 𝑺𝒆𝒕 𝑰𝒕 ! 📐", show_alert=True)
-
-
+@Bot.on_callback_query()
+async def extra_handler(client, query):
+    """Handle unknown callback queries"""
+    try:
+        await query.answer(
+            "⌛ This button has expired, please try your search again",
+            show_alert=True
+        )
+    except Exception:
+        pass
