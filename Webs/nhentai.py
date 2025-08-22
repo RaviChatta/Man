@@ -250,32 +250,39 @@ class NHentaiWebs(Scraper):
         # Extract gallery ID from URL
         gallery_id = url.split('/')[-2]
         if not gallery_id.isdigit():
+            logger.error(f"Invalid gallery ID: {gallery_id}")
             return []
         
-        # Method 1: Get from JavaScript data (most reliable)
+        logger.info(f"Extracting images for gallery {gallery_id}")
+        
+        # Method 1: Extract from JavaScript data (most reliable)
         scripts = bs.find_all('script')
         for script in scripts:
-            if script.string and 'gallery' in script.string:
-                # Look for gallery data in JavaScript
-                match = re.search(r'window\._gallery\s*=\s*JSON\.parse\(\s*\'(.+?)\'\s*\)', script.string)
-                if match:
-                    try:
-                        json_str = match.group(1).replace('\\"', '"').replace("\\'", "'")
+            if script.string and 'window._gallery' in script.string:
+                try:
+                    # Extract the JSON data from JavaScript
+                    json_match = re.search(r'window\._gallery\s*=\s*JSON\.parse\(\s*[\'"](.+?)[\'"]\s*\)', script.string, re.DOTALL)
+                    if json_match:
+                        json_str = json_match.group(1)
+                        # Unescape the JSON string
+                        json_str = json_str.replace('\\"', '"').replace("\\'", "'").replace('\\\\', '\\')
                         gallery_data = json.loads(json_str)
-                        media_id = gallery_data.get('media_id', '')
-                        images_data = gallery_data.get('images', {}).get('pages', [])
                         
-                        if media_id and images_data:
-                            for i, page_data in enumerate(images_data, 1):
-                                ext = self._get_extension(page_data.get('t', 'j'))
+                        media_id = gallery_data.get('media_id')
+                        images = gallery_data.get('images', {}).get('pages', [])
+                        
+                        if media_id and images:
+                            for i, image_data in enumerate(images, 1):
+                                ext = self._get_extension(image_data.get('t'))
                                 image_url = f"https://i.nhentai.net/galleries/{media_id}/{i}.{ext}"
                                 image_urls.append(image_url)
+                            logger.info(f"Found {len(image_urls)} images via JavaScript method")
                             break
-                    except Exception as e:
-                        logger.error(f"Error parsing gallery JSON: {e}")
-                        continue
+                except Exception as e:
+                    logger.error(f"Error parsing JavaScript gallery data: {e}")
+                    continue
         
-        # Method 2: Get from thumbnail data attributes
+        # Method 2: Extract from thumbnail data attributes
         if not image_urls:
             thumb_container = bs.find("div", id="thumbnail-container")
             if thumb_container:
@@ -287,29 +294,47 @@ class NHentaiWebs(Scraper):
                         if data_src:
                             # Convert thumbnail URL to full image URL
                             # Example: https://t.nhentai.net/galleries/2381456/1t.jpg -> https://i.nhentai.net/galleries/2381456/1.jpg
-                            if 't.nhentai.net' in data_src:
-                                full_url = data_src.replace('t.nhentai.net', 'i.nhentai.net')
-                                full_url = re.sub(r'(\d+)t\.(jpg|png|gif|webp)', r'\1.\2', full_url)
-                                image_urls.append(full_url)
+                            full_url = data_src.replace('t.nhentai.net', 'i.nhentai.net')
+                            full_url = re.sub(r'(\d+)t\.(jpg|png|gif|webp)', r'\1.\2', full_url)
+                            image_urls.append(full_url)
+                logger.info(f"Found {len(image_urls)} images via thumbnail method")
         
-        # Method 3: Construct URLs directly using gallery ID
+        # Method 3: Try to find media_id in other script tags
         if not image_urls:
-            # Try to get total pages
-            total_pages_elem = bs.find("span", class_="num-pages")
-            if total_pages_elem:
-                total_pages = int(total_pages_elem.text.strip())
-            else:
-                total_pages = data.get('total_pages', 0) if data else 0
+            media_id = None
+            for script in scripts:
+                if script.string and 'media_id' in script.string:
+                    media_match = re.search(r'"media_id"\s*:\s*["\']?(\d+)["\']?', script.string)
+                    if media_match:
+                        media_id = media_match.group(1)
+                        break
             
-            if total_pages > 0:
-                # Try different extensions for each page
-                for page_num in range(1, total_pages + 1):
-                    extensions = ['jpg', 'png', 'gif', 'webp']
-                    for ext in extensions:
-                        test_url = f"https://i.nhentai.net/galleries/{gallery_id}/{page_num}.{ext}"
-                        if await self._validate_image_url(test_url):
-                            image_urls.append(test_url)
-                            break
+            if media_id:
+                # Try to get total pages
+                total_pages = data.get('total_pages', 0) if data else 0
+                if total_pages == 0:
+                    # Try to find total pages in the HTML
+                    pages_elem = bs.find("span", class_="num-pages")
+                    if pages_elem:
+                        total_pages = int(pages_elem.text.strip())
+                
+                if total_pages > 0:
+                    for page_num in range(1, total_pages + 1):
+                        image_url = f"https://i.nhentai.net/g/{media_id}/{page_num}.jpg"
+                        image_urls.append(image_url)
+                logger.info(f"Found {len(image_urls)} images via media_id method")
+        
+        # Method 4: Direct construction as last resort
+        if not image_urls:
+            # Try different extensions for each possible page
+            for page_num in range(1, 51):  # Assume max 50 pages
+                extensions = ['jpg', 'png', 'gif', 'webp']
+                for ext in extensions:
+                    test_url = f"https://i.nhentai.net/galleries/{gallery_id}/{page_num}.{ext}"
+                    if await self._validate_image_url(test_url):
+                        image_urls.append(test_url)
+                        break
+            logger.info(f"Found {len(image_urls)} images via direct method")
         
         # Remove duplicates and ensure proper order
         unique_urls = []
@@ -320,8 +345,13 @@ class NHentaiWebs(Scraper):
                 seen_urls.add(url)
         
         # Sort by page number
-        unique_urls.sort(key=lambda x: int(re.search(r'/(\d+)\.(jpg|png|gif|webp)', x).group(1)) if re.search(r'/(\d+)\.(jpg|png|gif|webp)', x) else 0)
+        def get_page_number(url):
+            match = re.search(r'/(\d+)\.(jpg|png|gif|webp)', url)
+            return int(match.group(1)) if match else 0
         
+        unique_urls.sort(key=get_page_number)
+        
+        logger.info(f"Final image URLs: {unique_urls}")
         return unique_urls
 
     def _get_extension(self, format_code):
