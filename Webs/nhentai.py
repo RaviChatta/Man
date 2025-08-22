@@ -10,7 +10,7 @@ import asyncio
 class NHentaiWebs(Scraper):
     def __init__(self):
         super().__init__()
-        self.url = "https://nhentai.to"
+        self.url = "https://nhentai.net"
         self.bg = False
         self.sf = "nh"
         self.headers = {
