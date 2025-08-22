@@ -12,7 +12,7 @@ class Vars:
   API_ID = int(os.environ.get("API_ID", "25259066"))
   API_HASH = os.environ.get("API_HASH", "caad2cdad2fe06057f2bf8f8a8e58950")
   
-  BOT_TOKEN = os.environ.get("BOT_TOKEN", "7617704384:AAFtjQRfvYUO77Be3GPCEWXsmIiQQGVpBR0")
+  BOT_TOKEN = os.environ.get("BOT_TOKEN", "1599848664:AAEEefZw_WfGPEKHqEwlYvRySXrBXcQzlhg")
   plugins = dict(
     root="TG",
     #include=["TG.users"]
