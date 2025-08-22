@@ -2,6 +2,7 @@ from .scraper import Scraper
 import json 
 from bs4 import BeautifulSoup
 from loguru import logger
+import re
 
 
 class ToonilyScraper(Scraper):
@@ -26,36 +27,50 @@ class ToonilyScraper(Scraper):
         title = title_element.text.strip() if title_element else "N/A"
         
         # Extract cover image
-        cover_element = soup.find("div", class_="summary_image").find("img")
-        cover = cover_element["src"] if cover_element else "N/A"
+        cover_element = soup.find("div", class_="summary_image")
+        if cover_element:
+            img_element = cover_element.find("img")
+            cover = img_element["src"] if img_element else "N/A"
+        else:
+            cover = "N/A"
         
         # Extract description
         desc_element = soup.find("div", class_="summary__content")
         desc = desc_element.text.strip() if desc_element else "N/A"
         
         # Extract genres
-        genres_elements = soup.find("div", class_="genres-content").find_all("a")
-        genres_list = [genre.text.strip() for genre in genres_elements]
-        genres = ", ".join(genres_list) or "N/A"
+        genres = "N/A"
+        genres_element = soup.find("div", class_="genres-content")
+        if genres_element:
+            genres_elements = genres_element.find_all("a")
+            genres_list = [genre.text.strip() for genre in genres_elements]
+            genres = ", ".join(genres_list) or "N/A"
         
         # Extract status
-        status_element = soup.find("div", class_="summary-content", text="Status")
-        if status_element:
-            status = status_element.find_next_sibling("div").text.strip()
-        else:
-            status = "N/A"
-            
+        status = "N/A"
+        for div in soup.find_all("div", class_="summary-content"):
+            if "Status" in div.text:
+                status_div = div.find_next_sibling("div")
+                if status_div:
+                    status = status_div.text.strip()
+                break
+        
         # Extract authors
-        author_element = soup.find("div", class_="author-content")
-        authors = author_element.text.strip() if author_element else "N/A"
+        authors = "N/A"
+        for div in soup.find_all("div", class_="author-content"):
+            authors = div.text.strip()
+            break
         
         # Extract rating
-        rating_element = soup.find("span", class_="score")
+        rating_element = soup.find("div", class_="score")
         rating = rating_element.text.strip() if rating_element else "N/A"
         
         # Extract last chapter
-        last_chap_element = soup.find("li", class_="wp-manga-chapter").find("a")
-        last_chap = last_chap_element.text.strip() if last_chap_element else "N/A"
+        last_chap = "N/A"
+        chapter_elements = soup.find_all("li", class_="wp-manga-chapter")
+        if chapter_elements:
+            last_chap_element = chapter_elements[0].find("a")
+            last_chap = last_chap_element.text.strip() if last_chap_element else "N/A"
         
         # Construct message
         msg = f"<b>{title}</b>\n\n"
@@ -65,16 +80,14 @@ class ToonilyScraper(Scraper):
         msg += f"<b>Status:</b> <code>{status}</code>\n"
         msg += f"<b>Authors:</b> <code>{authors}</code>\n"
 
-        su = len(desc) + len(msg)
-        if su < 1024:
+        # Add description if it fits
+        if len(desc) + len(msg) < 1024:
             msg += f"\n<i>{desc}</i>"
-            if len(msg) > 1024:
-                msg = msg[:1023]
         else:
             msg += f"\n<b><a href='{url}'>Read more...</a></b>"
 
         if len(msg) > 1024:
-            msg = msg[:1023]
+            msg = msg[:1021] + "..."  # Truncate with ellipsis
         
         data['msg'] = msg
         data['poster'] = cover
@@ -89,13 +102,17 @@ class ToonilyScraper(Scraper):
         soup = BeautifulSoup(response, "html.parser")
         
         mangas = []
-        results = soup.find_all("div", class_="row c-tabs-item__content")
+        results = soup.find_all("div", class_="page-item-detail")
         
         for result in results:
             title_element = result.find("h3").find("a")
+            if not title_element:
+                continue
+                
             title = title_element.text.strip()
             url = title_element["href"]
-            slug = url.split("/")[-2]
+            slug_match = re.search(r'/webtoon/([^/]+)/', url)
+            slug = slug_match.group(1) if slug_match else url.split("/")[-2]
             
             image_element = result.find("img")
             poster = image_element["src"] if image_element else "N/A"
@@ -111,13 +128,8 @@ class ToonilyScraper(Scraper):
         return mangas
     
     async def get_chapters(self, data, page: int = 1):
-        url = f"{self.url}/webtoon/{data['slug']}/ajax/chapters/"
-        payload = {
-            "action": "manga_get_chapters",
-            "manga": data.get("id", data["slug"])
-        }
-        
-        response = await self.post(url, data=payload, headers=self.headers)
+        url = data['url']  # Use the manga URL directly
+        response = await self.get(url, cs=True, headers=self.headers)
         soup = BeautifulSoup(response, "html.parser")
         
         chapters = soup.find_all("li", class_="wp-manga-chapter")
@@ -125,19 +137,25 @@ class ToonilyScraper(Scraper):
         results = {
             "chapters": [],
             "title": data["title"],
-            "slug": data["slug"]
+            "slug": data["slug"],
+            "url": data["url"]
         }
         
         for chapter in chapters:
             chapter_link = chapter.find("a")
+            if not chapter_link:
+                continue
+                
             chapter_title = chapter_link.text.strip()
             chapter_url = chapter_link["href"]
-            chapter_slug = chapter_url.split("/")[-2]
+            chapter_slug_match = re.search(r'/chapter-(\d+)/', chapter_url)
+            chapter_slug = chapter_slug_match.group(1) if chapter_slug_match else chapter_url.split("/")[-2]
             
             results["chapters"].append({
                 "title": chapter_title,
                 "url": chapter_url,
-                "slug": chapter_slug
+                "slug": chapter_slug,
+                "chap": chapter_slug  # Add chap field for consistency
             })
         
         await self.get_information(data['slug'], results)
@@ -182,21 +200,27 @@ class ToonilyScraper(Scraper):
         updates = soup.find_all("div", class_="page-item-detail")
         
         for item in updates:
-            title_element = item.find("h3").find("a")
-            title = title_element.text.strip()
-            manga_url = title_element["href"]
-            slug = manga_url.split("/")[-2]
+            title_element = item.find("h3")
+            if not title_element:
+                continue
+                
+            title_link = title_element.find("a")
+            if not title_link:
+                continue
+                
+            title = title_link.text.strip()
+            manga_url = title_link["href"]
+            slug_match = re.search(r'/webtoon/([^/]+)/', manga_url)
+            slug = slug_match.group(1) if slug_match else manga_url.split("/")[-2]
             
             chapter_element = item.find("span", class_="chapter")
+            chapter_title = "N/A"
+            chapter_url = "N/A"
             if chapter_element:
                 chapter_link = chapter_element.find("a")
-                chapter_title = chapter_link.text.strip()
-                chapter_url = chapter_link["href"]
-                chapter_slug = chapter_url.split("/")[-2]
-            else:
-                chapter_title = "N/A"
-                chapter_url = "N/A"
-                chapter_slug = "N/A"
+                if chapter_link:
+                    chapter_title = chapter_link.text.strip()
+                    chapter_url = chapter_link["href"]
                 
             image_element = item.find("img")
             poster = image_element["src"] if image_element else "N/A"
