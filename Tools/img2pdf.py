@@ -72,7 +72,7 @@ async def download_through_cloudscrapper(image_url, download_dir, quality=90):
     
 
                 
-def download_and_convert_images(images, download_dir, quality=90, target_width=None):
+def download_and_convert_images(images, download_dir, quality=95, target_width=None):
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
 
@@ -126,7 +126,7 @@ def compress_image(image_path, output_path, quality=95, target_width=None):
         return image_path
 
 
-def convert_images_to_pdf(image_files, pdf_output_path, compressed_dir, password=None, compression_quality=80):
+def convert_images_to_pdf(image_files, pdf_output_path, compressed_dir, password=None, compression_quality=85):
     if not image_files:
         logger.warning("No images provided for PDF conversion.")
         return "No images provided for PDF conversion."
