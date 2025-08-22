@@ -28,7 +28,20 @@ class NHentaiWebs(Scraper):
         }
 
     async def search(self, query: str = ""):
-        url = f"{self.url}/search/?q={quote_plus(query)}"
+        # Handle both gallery IDs and search queries
+        if query.startswith('#') and query[1:].isdigit():
+            # Direct gallery ID search
+            gallery_id = query[1:]
+            url = f"{self.url}/g/{gallery_id}/"
+            return [await self._get_gallery_data(url, gallery_id)]
+        elif query.isdigit():
+            # Direct gallery ID without #
+            url = f"{self.url}/g/{query}/"
+            return [await self._get_gallery_data(url, query)]
+        else:
+            # Regular search
+            url = f"{self.url}/search/?q={quote_plus(query)}"
+        
         logger.info(f"Searching NHentai with URL: {url}")
         
         results = await self.get(url, headers=self.headers, cs=True)
@@ -39,7 +52,7 @@ class NHentaiWebs(Scraper):
         bs = BeautifulSoup(results, "html.parser")
         results_list = []
         
-        # Find gallery items - nhentai.to uses specific structure
+        # Find gallery items on nhentai.net
         gallery_items = bs.find_all("div", class_="gallery")
         
         for item in gallery_items[:15]:  # Limit to 15 results
@@ -87,9 +100,40 @@ class NHentaiWebs(Scraper):
                 
         return results_list
 
-    async def get_information(self, slug, data):
-        # For NHentai, we use the get_chapters method to get info
-        pass
+    async def _get_gallery_data(self, url, gallery_id):
+        """Get gallery data for direct ID access"""
+        content = await self.get(url, headers=self.headers, cs=True)
+        if not content:
+            return {"title": f"Gallery {gallery_id}", "url": url, "id": gallery_id}
+            
+        bs = BeautifulSoup(content, "html.parser")
+        
+        data = {
+            "url": url,
+            "id": gallery_id,
+            "title": f"Gallery {gallery_id}",
+            "poster": None
+        }
+        
+        # Get title
+        title_elem = bs.find("h1", class_="title") or bs.find("h2", class_="title") or bs.find("title")
+        if title_elem:
+            data['title'] = title_elem.text.strip()
+        
+        # Get cover image
+        cover_elem = bs.find("div", id="cover")
+        if cover_elem:
+            img = cover_elem.find("img")
+            if img:
+                img_src = img.get('data-src') or img.get('src')
+                if img_src:
+                    if img_src.startswith('//'):
+                        img_src = 'https:' + img_src
+                    elif not img_src.startswith('http'):
+                        img_src = urljoin(self.url, img_src)
+                    data['poster'] = img_src
+        
+        return data
 
     async def get_chapters(self, data, page: int = 1):
         if 'url' not in data:
@@ -180,10 +224,10 @@ class NHentaiWebs(Scraper):
                     img_src = img.get('data-src') or img.get('src')
                     if img_src:
                         # Convert thumbnail URL to full image URL
-                        # Thumbnail: https://t.nhentai.to/galleries/2381456/1t.jpg
-                        # Full image: https://i.nhentai.to/galleries/2381456/1.jpg
-                        if 't.nhentai.to' in img_src:
-                            full_img_url = img_src.replace('t.nhentai.to', 'i.nhentai.to').replace('t.jpg', '.jpg').replace('t.png', '.png')
+                        # Thumbnail: https://t.nhentai.net/galleries/2381456/1t.jpg
+                        # Full image: https://i.nhentai.net/galleries/2381456/1.jpg
+                        if 't.nhentai.net' in img_src:
+                            full_img_url = img_src.replace('t.nhentai.net', 'i.nhentai.net').replace('t.jpg', '.jpg').replace('t.png', '.png')
                             image_urls.append(full_img_url)
                         else:
                             # Try to construct full image URL from pattern
@@ -191,7 +235,7 @@ class NHentaiWebs(Scraper):
                             if match:
                                 gallery_id = match.group(1)
                                 page_num = match.group(2)
-                                full_img_url = f"https://i.nhentai.to/galleries/{gallery_id}/{page_num}.jpg"
+                                full_img_url = f"https://i.nhentai.net/galleries/{gallery_id}/{page_num}.jpg"
                                 image_urls.append(full_img_url)
         
         # Method 2: Try to find image URLs in script tags
@@ -213,27 +257,15 @@ class NHentaiWebs(Scraper):
                                     if ext == 'j': ext = 'jpg'
                                     elif ext == 'p': ext = 'png'
                                     elif ext == 'g': ext = 'gif'
-                                    image_url = f"https://i.nhentai.to/galleries/{gallery_id}/{i}.{ext}"
+                                    image_url = f"https://i.nhentai.net/galleries/{gallery_id}/{i}.{ext}"
                                     image_urls.append(image_url)
                         except:
                             pass
         
-        # Method 3: Fallback - try to find any image patterns
-        if not image_urls:
-            all_images = bs.find_all('img')
-            for img in all_images:
-                img_src = img.get('src') or img.get('data-src')
-                if img_src and any(x in img_src for x in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
-                    if img_src.startswith('//'):
-                        img_src = 'https:' + img_src
-                    elif not img_src.startswith('http'):
-                        img_src = urljoin(self.url, img_src)
-                    image_urls.append(img_src)
-        
         return list(dict.fromkeys(image_urls))  # Remove duplicates while preserving order
 
     async def get_updates(self, page: int = 1):
-        # NHentai doesn't have a traditional updates page, so we'll use the front page
+        # NHentai front page as updates
         url = f"{self.url}/" if page == 1 else f"{self.url}/?page={page}"
         
         content = await self.get(url, headers=self.headers, cs=True)
