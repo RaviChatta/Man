@@ -11,7 +11,7 @@ import shutil
 from time import time
 from pyrogram.types import InputMediaDocument
 
-from Tools.db import uts, sync
+from Tools.db import db
 
 def clean(txt, length=-1):
   txt = txt.replace("_", "").replace("&", "").replace(";", "")
