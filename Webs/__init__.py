@@ -15,4 +15,4 @@ from .manhwa18 import Manhwa18Webs
 from .manga18fx import Manga18fxWebs
 from .nhentai import NHentaiWebs
 from .bato import BatoWebs  # Add this line
-from .Toonily import ToonilyScraper
+from .toonily import ToonilyScraper
