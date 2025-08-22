@@ -38,7 +38,7 @@ def thumbnali_images(image_url, download_dir, quality=80, file_name="thumb.jpg")
     else:
         return None
 
-async def download_through_cloudscrapper(image_url, download_dir, quality=80):
+async def download_through_cloudscrapper(image_url, download_dir, quality=90):
     scraper = create_scraper()
     
     if not os.path.exists(download_dir):
@@ -72,7 +72,7 @@ async def download_through_cloudscrapper(image_url, download_dir, quality=80):
     
 
                 
-def download_and_convert_images(images, download_dir, quality=80, target_width=None):
+def download_and_convert_images(images, download_dir, quality=90, target_width=None):
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
 
@@ -109,7 +109,7 @@ def download_and_convert_images(images, download_dir, quality=80, target_width=N
     return image_files
 
 
-def compress_image(image_path, output_path, quality=80, target_width=None):
+def compress_image(image_path, output_path, quality=95, target_width=None):
     """Compress the image by resizing and reducing its quality."""
     try:
         img = Image.open(image_path).convert("RGB")
@@ -126,7 +126,7 @@ def compress_image(image_path, output_path, quality=80, target_width=None):
         return image_path
 
 
-def convert_images_to_pdf(image_files, pdf_output_path, compressed_dir, password=None, compression_quality=100):
+def convert_images_to_pdf(image_files, pdf_output_path, compressed_dir, password=None, compression_quality=80):
     if not image_files:
         logger.warning("No images provided for PDF conversion.")
         return "No images provided for PDF conversion."
