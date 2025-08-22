@@ -19,6 +19,15 @@ class ToonilyScraper(Scraper):
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Referer": "https://toonily.com/",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Cache-Control": "max-age=0",
         }
         self.search_query = dict()
     
@@ -26,6 +35,10 @@ class ToonilyScraper(Scraper):
         url = f"{self.url}/webtoon/{slug}/"
         response = await self.get(url, cs=True, headers=self.headers)
         soup = BeautifulSoup(response, "html.parser")
+        
+        # Remove any overlays/popups that might block content
+        for overlay in soup.find_all(["div", "section"], class_=lambda x: x and any(keyword in str(x).lower() for keyword in ['popup', 'overlay', 'modal', 'discord', 'advertisement'])):
+            overlay.decompose()
         
         # Extract title
         title_element = soup.find("h1", class_="entry-title")
@@ -67,7 +80,7 @@ class ToonilyScraper(Scraper):
             break
         
         # Extract rating
-        rating_element = soup.find("div", class_="score")
+        rating_element = soup.find("span", class_="score")
         rating = rating_element.text.strip() if rating_element else "N/A"
         
         # Extract last chapter
@@ -137,6 +150,10 @@ class ToonilyScraper(Scraper):
         response = await self.get(url, cs=True, headers=self.headers)
         soup = BeautifulSoup(response, "html.parser")
         
+        # Remove overlays
+        for overlay in soup.find_all(["div", "section"], class_=lambda x: x and any(keyword in str(x).lower() for keyword in ['popup', 'overlay', 'modal', 'discord', 'advertisement'])):
+            overlay.decompose()
+        
         chapters = soup.find_all("li", class_="wp-manga-chapter")
         
         results = {
@@ -183,8 +200,31 @@ class ToonilyScraper(Scraper):
         return chapters_list
     
     async def get_pictures(self, url, data=None):
-        response = await self.get(url, cs=True, headers=self.headers)
+        # Use different headers to avoid the overlay
+        overlay_headers = self.headers.copy()
+        overlay_headers.update({
+            "Referer": "https://toonily.com/",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+        })
+        
+        response = await self.get(url, cs=True, headers=overlay_headers)
         soup = BeautifulSoup(response, "html.parser")
+        
+        # Remove all overlays, popups, and Discord messages
+        for element in soup.find_all(["div", "section"]):
+            classes = element.get('class', [])
+            if classes and any(keyword in str(classes).lower() for keyword in ['popup', 'overlay', 'modal', 'discord', 'advertisement', 'notification']):
+                element.decompose()
+            elif element.get('id') and any(keyword in element.get('id', '').lower() for keyword in ['popup', 'overlay', 'modal', 'discord']):
+                element.decompose()
+        
+        # Also remove any elements containing Discord text
+        for element in soup.find_all(string=re.compile(r'discord|join server|support creator', re.IGNORECASE)):
+            if element.parent:
+                element.parent.decompose()
         
         images = []
         reading_content = soup.find("div", class_="reading-content")
@@ -195,7 +235,7 @@ class ToonilyScraper(Scraper):
                 if img.get("src"):
                     img_url = img["src"].strip()
                     # Skip placeholder/default images
-                    if any(placeholder in img_url.lower() for placeholder in ["default", "placeholder", "logo", "icon"]):
+                    if any(placeholder in img_url.lower() for placeholder in ["default", "placeholder", "logo", "icon", "discord", "ad"]):
                         continue
                     # Validate the image before adding
                     if await self.validate_image(img_url):
@@ -212,6 +252,18 @@ class ToonilyScraper(Scraper):
                     if ("chapter" in img_url.lower() or "wp-content" in img_url) and not any(placeholder in img_url.lower() for placeholder in ["default", "placeholder"]):
                         if await self.validate_image(img_url):
                             images.append(img_url)
+        
+        # If still no images, try JavaScript-loaded images
+        if not images:
+            scripts = soup.find_all('script')
+            for script in scripts:
+                if script.string and 'images' in script.string:
+                    # Look for image URLs in JavaScript
+                    image_urls = re.findall(r'https?://[^\s"\']+\.(jpg|jpeg|png|gif|webp)', script.string, re.IGNORECASE)
+                    for img_url in image_urls:
+                        if not any(placeholder in img_url.lower() for placeholder in ["default", "placeholder", "logo", "icon"]):
+                            if await self.validate_image(img_url):
+                                images.append(img_url)
         
         return images
     
@@ -250,6 +302,10 @@ class ToonilyScraper(Scraper):
         
         response = await self.get(url, cs=True, headers=self.headers)
         soup = BeautifulSoup(response, "html.parser")
+        
+        # Remove overlays
+        for overlay in soup.find_all(["div", "section"], class_=lambda x: x and any(keyword in str(x).lower() for keyword in ['popup', 'overlay', 'modal', 'discord', 'advertisement'])):
+            overlay.decompose()
         
         updates = soup.find_all("div", class_="page-item-detail")
         
