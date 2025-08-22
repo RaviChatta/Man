@@ -126,7 +126,7 @@ def compress_image(image_path, output_path, quality=80, target_width=None):
         return image_path
 
 
-def convert_images_to_pdf(image_files, pdf_output_path, compressed_dir, password=None, compression_quality=50):
+def convert_images_to_pdf(image_files, pdf_output_path, compressed_dir, password=None, compression_quality=100):
     if not image_files:
         logger.warning("No images provided for PDF conversion.")
         return "No images provided for PDF conversion."
