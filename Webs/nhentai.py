@@ -11,7 +11,7 @@ class NHentaiWebs(Scraper):
     def __init__(self):
         super().__init__()
         self.url = "https://nhentai.net/"
-        self.bg = False
+        self.bg = False  # Disable background updates for NSFW content
         self.sf = "nh"
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -29,8 +29,8 @@ class NHentaiWebs(Scraper):
 
     async def search(self, query: str = ""):
         if not query.strip():
-            # If empty query, show popular
-            return await self.get_updates()
+            # If empty query, show popular from homepage
+            return await self._get_popular()
             
         url = f"https://nhentai.net/search/?q={quote_plus(query)}"
         results = await self.get(url, headers=self.headers, cs=True)
@@ -41,27 +41,12 @@ class NHentaiWebs(Scraper):
         bs = BeautifulSoup(results, "html.parser")
         
         # Try multiple selectors for gallery containers
-        containers = [
-            bs.find("div", class_="container"),
-            bs.find("div", class_="index-container"),
-            bs.find("div", class_="gallery"),
-            bs.find("div", id="content")
-        ]
-        
-        container = None
-        for c in containers:
-            if c:
-                container = c
-                break
-        else:
-            container = bs
-        
-        # Find galleries using multiple selectors
-        galleries = container.find_all("div", class_=lambda x: x and "gallery" in str(x).lower())
+        galleries = bs.find_all("div", class_="gallery")
         if not galleries:
-            galleries = container.find_all("div", class_=lambda x: x and "container" in str(x).lower())
-        if not galleries:
-            galleries = container.find_all("a", href=re.compile(r'/g/\d+/'))
+            # Fallback to container search
+            container = bs.find("div", class_="container")
+            if container:
+                galleries = container.find_all("div", class_=lambda x: x and "gallery" in str(x).lower())
         
         results_list = []
         for gallery in galleries[:20]:  # Limit to 20 results
@@ -69,27 +54,23 @@ class NHentaiWebs(Scraper):
                 data = {}
                 
                 # Get link
-                if gallery.name == "a":
-                    link = gallery
-                else:
-                    link = gallery.find("a")
-                
+                link = gallery.find("a", class_="cover")
                 if not link or not link.get('href'):
                     continue
                     
                 data['url'] = urljoin(self.url, link.get('href').strip())
                 
                 # Get image
-                img = gallery.find("img") or link.find("img")
+                img = link.find("img")
                 if img:
                     data['poster'] = img.get('data-src') or img.get('src')
                     if data['poster'] and not data['poster'].startswith(('http', '//')):
                         data['poster'] = urljoin(self.url, data['poster'])
                 
                 # Get title
-                title_elem = gallery.find("div", class_="caption") or gallery.find("h3") or gallery.find("h2")
-                if title_elem:
-                    data['title'] = title_elem.text.strip()
+                caption = gallery.find("div", class_="caption")
+                if caption:
+                    data['title'] = caption.text.strip()
                 else:
                     # Extract from URL as fallback
                     title_from_url = data['url'].split('/')[-2].replace('-', ' ').title()
@@ -103,6 +84,50 @@ class NHentaiWebs(Scraper):
                     
             except Exception as e:
                 logger.error(f"Error parsing nhentai search result: {e}")
+                continue
+                
+        return results_list
+
+    async def _get_popular(self):
+        """Get popular galleries from homepage"""
+        results = await self.get("https://nhentai.net/", headers=self.headers, cs=True)
+        if not results:
+            return []
+            
+        bs = BeautifulSoup(results, "html.parser")
+        galleries = bs.find_all("div", class_="gallery")[:20]  # Limit to 20
+        
+        results_list = []
+        for gallery in galleries:
+            try:
+                data = {}
+                
+                link = gallery.find("a", class_="cover")
+                if not link or not link.get('href'):
+                    continue
+                    
+                data['url'] = urljoin(self.url, link.get('href').strip())
+                
+                img = link.find("img")
+                if img:
+                    data['poster'] = img.get('data-src') or img.get('src')
+                    if data['poster'] and not data['poster'].startswith(('http', '//')):
+                        data['poster'] = urljoin(self.url, data['poster'])
+                
+                caption = gallery.find("div", class_="caption")
+                if caption:
+                    data['title'] = caption.text.strip()
+                else:
+                    title_from_url = data['url'].split('/')[-2].replace('-', ' ').title()
+                    data['title'] = title_from_url
+                
+                data['id'] = data['url'].split("/")[-2]
+                
+                if all(key in data for key in ['url', 'title']):
+                    results_list.append(data)
+                    
+            except Exception as e:
+                logger.error(f"Error parsing nhentai popular result: {e}")
                 continue
                 
         return results_list
@@ -221,58 +246,6 @@ class NHentaiWebs(Scraper):
         return image_links
 
     async def get_updates(self, page:int=1):
-        output = []
-        
-        # Try different pages for updates
-        urls = [
-            f"https://nhentai.net/?page={page}",
-            f"https://nhentai.net/popular?page={page}",
-            f"https://nhentai.net/trending?page={page}"
-        ]
-        
-        for url in urls:
-            results = await self.get(url, headers=self.headers, cs=True)
-            if not results:
-                continue
-                
-            bs = BeautifulSoup(results, "html.parser")
-            
-            # Find galleries
-            galleries = bs.find_all("div", class_=lambda x: x and "gallery" in str(x).lower())
-            if not galleries:
-                galleries = bs.find_all("a", href=re.compile(r'/g/\d+/'))
-            
-            for gallery in galleries[:30]:  # Limit to 30 results
-                try:
-                    data = {}
-                    
-                    # Get link
-                    if gallery.name == "a":
-                        link = gallery
-                    else:
-                        link = gallery.find("a")
-                    
-                    if not link or not link.get('href'):
-                        continue
-                        
-                    data['url'] = urljoin(self.url, link.get('href').strip())
-                    data['manga_title'] = "Unknown Title"
-                    
-                    # Try to get title
-                    title_elem = gallery.find("div", class_="caption") or gallery.find("h3") or gallery.find("h2")
-                    if title_elem:
-                        data['manga_title'] = title_elem.text.strip()
-                    
-                    data['chapter_url'] = data['url']
-                    data['title'] = f"Gallery {data['url'].split('/')[-2]}"
-                    
-                    output.append(data)
-                    
-                except Exception as e:
-                    logger.error(f"Error parsing nhentai update: {e}")
-                    continue
-            
-            if output:
-                break
-        
-        return output
+        # NHentai doesn't have traditional updates, return empty list
+        # since bg=False should prevent this from being called anyway
+        return []
