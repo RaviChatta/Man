@@ -98,7 +98,7 @@ async def download_through_cloudscrapper(image_url, download_dir, quality=90):
                 
     return images_file
 
-def download_and_convert_images(images, download_dir, quality=95, target_width=None):
+def download_and_convert_images(images, download_dir, quality=80, target_width=None):
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
 
@@ -152,7 +152,7 @@ def download_and_convert_images(images, download_dir, quality=95, target_width=N
 
 
 
-def compress_image(image_path, output_path, quality=95, target_width=None):
+def compress_image(image_path, output_path, quality=80, target_width=None):
     """Compress the image by resizing and reducing its quality."""
     try:
         img = Image.open(image_path).convert("RGB")
