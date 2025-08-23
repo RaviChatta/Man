@@ -4,16 +4,20 @@ from .storage import *
 from bot import Bot, Vars, logger
 import random
 from Tools.db import *
-from pyrogram.errors import FloodWait
+from pyrogram.errors import FloodWait, MessageNotModified
 import asyncio
+import time
 
-# Helper function to handle flood waits
+# Helper function to handle flood waits and message not modified errors
 async def retry_on_flood(func, *args, **kwargs):
     try:
         return await func(*args, **kwargs)
     except FloodWait as e:
         await asyncio.sleep(e.value)
         return await func(*args, **kwargs)
+    except MessageNotModified:
+        # Silently ignore "message not modified" errors
+        return None
 
 # ========================
 # BASIC HANDLERS
@@ -181,7 +185,7 @@ async def p_handler(client, query):
     buttons = split_list(buttons[:60])
     
     # Add pagination if needed
-    c = f"pg:{sf}:{hash(chapters[-1]['url'])}:"
+    c = f"pg:{sf}:{hash(chapters[-1]['url'])}:{int(time.time())}"
     if len(chapters) > 60 or sf == "ck":
         pagination[c] = (webs, data, rdata)
         buttons.append([
@@ -202,21 +206,28 @@ async def p_handler(client, query):
 
     # Add special buttons based on source
     if sf == "ck":
-        scan_callback = f"sgh:{sf}:{hash(chapters[0]['url'])}"
+        scan_callback = f"sgh:{sf}:{hash(chapters[0]['url'])}:{int(time.time())}"
         pagination[scan_callback] = (chapters, webs, rdata, "1")
         buttons.append([InlineKeyboardButton("👥 Scanlation Groups", callback_data=scan_callback)])
     else:
-        full_callback = f"full:{sf}:{hash(chapters[0]['url'])}"
+        full_callback = f"full:{sf}:{hash(chapters[0]['url'])}:{int(time.time())}"
         pagination[full_callback] = (chapters[:60], webs)
         buttons.append([InlineKeyboardButton("📖 All Chapters", callback_data=full_callback)])
 
     # Add back button
     buttons.append([InlineKeyboardButton("🔙 Back", callback_data=f"bk.s.{sf}")])
 
-    await retry_on_flood(
-        query.edit_message_reply_markup,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+    # Only update if markup has changed
+    current_markup = query.message.reply_markup
+    new_markup = InlineKeyboardMarkup(buttons)
+    
+    if not current_markup or str(current_markup) != str(new_markup):
+        await retry_on_flood(
+            query.edit_message_reply_markup,
+            reply_markup=new_markup
+        )
+    else:
+        await query.answer()
 
 # ========================
 # PAGINATION HANDLERS
@@ -280,7 +291,7 @@ async def pg_handler(client, query):
     buttons = split_list(buttons[:60])
     
     # Add pagination controls
-    c = f"pg:{sf}:{hash(chapters[-1]['url'])}:"
+    c = f"pg:{sf}:{hash(chapters[-1]['url'])}:{int(time.time())}"
     pagination[c] = (webs, data, rdata)
     
     nav_buttons = []
@@ -312,11 +323,11 @@ async def pg_handler(client, query):
 
     # Add special buttons based on source
     if sf == "ck":
-        scan_callback = f"sgh:{sf}:{hash(chapters[0]['url'])}"
+        scan_callback = f"sgh:{sf}:{hash(chapters[0]['url'])}:{int(time.time())}"
         pagination[scan_callback] = (chapters, webs, rdata, page)
         buttons.append([InlineKeyboardButton("👥 Scanlation Groups", callback_data=scan_callback)])
     else:
-        full_callback = f"full:{sf}:{hash(chapters[0]['url'])}"
+        full_callback = f"full:{sf}:{hash(chapters[0]['url'])}:{int(time.time())}"
         if int(page) == 1:
             pagination[full_callback] = (chapters[:60], webs)
         else:
@@ -326,10 +337,17 @@ async def pg_handler(client, query):
     # Add back button
     buttons.append([InlineKeyboardButton("🔙 Back", callback_data=f"bk.s.{sf}")])
 
-    await retry_on_flood(
-        query.edit_message_reply_markup,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+    # Only update if markup has changed
+    current_markup = query.message.reply_markup
+    new_markup = InlineKeyboardMarkup(buttons)
+    
+    if not current_markup or str(current_markup) != str(new_markup):
+        await retry_on_flood(
+            query.edit_message_reply_markup,
+            reply_markup=new_markup
+        )
+    else:
+        await query.answer()
 
 # ========================
 # SCANLATION GROUP HANDLERS
@@ -359,7 +377,7 @@ async def cgk_handler(client, query):
     buttons = []
     for group_name, group_chapters in groups.items():
         group_len = len(group_chapters)
-        c = f"sgk|{hash(group_name)}"
+        c = f"sgk|{hash(group_name)}:{int(time.time())}"
         pagination[c] = (group_chapters, webs, page, f"pg:{webs.sf}:{hash(chapters[-1]['url'])}:{page}", query.data)
         
         group_display = group_name if group_name != 'Unknown' else 'No Group'
@@ -371,12 +389,17 @@ async def cgk_handler(client, query):
     back_callback = f"pg:{webs.sf}:{hash(chapters[-1]['url'])}:{page}"
     buttons.append([InlineKeyboardButton("🔙 Back to Chapters", callback_data=back_callback)])
     
-    await retry_on_flood(
-        query.edit_message_reply_markup,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+    # Only update if markup has changed
+    current_markup = query.message.reply_markup
+    new_markup = InlineKeyboardMarkup(buttons)
     
-    await query.answer()
+    if not current_markup or str(current_markup) != str(new_markup):
+        await retry_on_flood(
+            query.edit_message_reply_markup,
+            reply_markup=new_markup
+        )
+    else:
+        await query.answer()
 
 @Bot.on_callback_query(filters.regex("^sgk"))
 async def sgk_handler(client, query):
@@ -403,7 +426,7 @@ async def sgk_handler(client, query):
     buttons = split_list(buttons[:60])
     
     # Add full page button
-    full_callback = f"full:{webs.sf}:{hash(chapters[0]['url'])}"
+    full_callback = f"full:{webs.sf}:{hash(chapters[0]['url'])}:{int(time.time())}"
     pagination[full_callback] = (chapters, webs)
     buttons.append([InlineKeyboardButton("📖 All Chapters in Group", callback_data=full_callback)])
     
@@ -413,12 +436,17 @@ async def sgk_handler(client, query):
         InlineKeyboardButton("↩️ Back to All", callback_data=rcallback_data)
     ])
     
-    await retry_on_flood(
-        query.edit_message_reply_markup,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+    # Only update if markup has changed
+    current_markup = query.message.reply_markup
+    new_markup = InlineKeyboardMarkup(buttons)
     
-    await query.answer()
+    if not current_markup or str(current_markup) != str(new_markup):
+        await retry_on_flood(
+            query.edit_message_reply_markup,
+            reply_markup=new_markup
+        )
+    else:
+        await query.answer()
 
 # ========================
 # DOWNLOAD HANDLERS
@@ -512,7 +540,8 @@ async def subs_handler(client, query):
         return await query.answer("❌ This action is not for you", show_alert=True)
 
     # Get current buttons
-    buttons = query.message.reply_markup.inline_keyboard
+    current_markup = query.message.reply_markup
+    buttons = current_markup.inline_keyboard.copy()
 
     # Toggle subscription status
     if get_subs(str(query.from_user.id), data['url']):
@@ -524,10 +553,14 @@ async def subs_handler(client, query):
         buttons[0] = [InlineKeyboardButton("🔔 Subscribed", callback_data=query.data)]
         await query.answer("✅ Subscribed")
 
-    await retry_on_flood(
-        query.edit_message_reply_markup,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+    # Only update if markup has changed
+    new_markup = InlineKeyboardMarkup(buttons)
+    
+    if str(current_markup) != str(new_markup):
+        await retry_on_flood(
+            query.edit_message_reply_markup,
+            reply_markup=new_markup
+        )
 
 # ========================
 # PICTURE DOWNLOAD HANDLERS
@@ -630,9 +663,17 @@ async def bk_handler(client, query):
             pass
         
         if reply and reply.text == "/updates":
-            await query.edit_message_reply_markup(plugins_list("updates"))
+            new_markup = plugins_list("updates")
         else:
-            await query.edit_message_reply_markup(plugins_list())
+            new_markup = plugins_list()
+        
+        # Only update if markup has changed
+        current_markup = query.message.reply_markup
+        if not current_markup or str(current_markup) != str(new_markup):
+            await retry_on_flood(
+                query.edit_message_reply_markup,
+                reply_markup=new_markup
+            )
     
     elif query.data.startswith("bk.s"):
         # Return to search results
