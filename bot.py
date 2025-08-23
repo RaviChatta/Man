@@ -12,15 +12,15 @@ class Vars:
   API_ID = int(os.environ.get("API_ID", "25259066"))
   API_HASH = os.environ.get("API_HASH", "caad2cdad2fe06057f2bf8f8a8e58950")
   
-  BOT_TOKEN = os.environ.get("BOT_TOKEN", "1599848664:AAEEefZw_WfGPEKHqEwlYvRySXrBXcQzlhg")
+  BOT_TOKEN = os.environ.get("BOT_TOKEN", "7617704384:AAFtjQRfvYUO77Be3GPCEWXsmIiQQGVpBR0")
   plugins = dict(
     root="TG",
     #include=["TG.users"]
   )
   
-  LOG_CHANNEL = os.environ.get("LOG_CHANNEL", "")
-  UPDATE_CHANNEL = os.environ.get("UPDATE_CHANNEL", "@TFIBOTS")
-  DB_URL = os.environ.get("DB_URL", "mongodb+srv://senku4:1S1Y7OeNUe9dDs8B@senku.bqs9fgx.mongodb.net/?retryWrites=true&w=majority&appName=senku")
+  LOG_CHANNEL = os.environ.get("LOG_CHANNEL", "@emledhurrror")
+  UPDATE_CHANNEL = os.environ.get("UPDATE_CHANNEL", "@TFIBOTS_SUPPORT")
+  DB_URL = os.environ.get("DB_URL", "mongodb+srv://mangadbdi:7R2PpNqaMNzNqMiT@manga.lya2tte.mongodb.net/?retryWrites=true&w=majority&appName=manga")
   
   PORT = int(os.environ.get("PORT", "8080"))
   ADMINS = [1047253913]
