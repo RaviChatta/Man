@@ -19,7 +19,7 @@ async def restart_timer():
 
 async def runner():
     # spawn workers
-    for i in range(15):
+    for i in range(4):
         asyncio.create_task(worker(i))
     # main updates
     asyncio.create_task(main_updates())
