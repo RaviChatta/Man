@@ -1,0 +1,18 @@
+# deploy.yml
+name: tg-bot
+services:
+  - name: tg-bot
+    type: web
+    runtime: python
+    build:
+      builder: python
+      buildCommand: pip install -r requirements.txt
+    run:
+      command: python main.py
+    env:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+    auto_restart: true   # ensures restart if process dies
+    scaling:
+      min: 1
+      max: 1
