@@ -13,3 +13,5 @@ PyPDF2
 psutil
 flask
 gunicorn
+aiohttp==3.12.15
+
