@@ -23,21 +23,32 @@ class Scraper:
                 if response.status_code == 200:
                     return response.json() if rjson else response.text
                 else:
+                    logger.warning(f"Non-200 status code {response.status_code} for {url}")
                     return None
                     
             except HTTPError as e:
-                if response.status_code == 403 and attempt < retries - 1:
-                    logger.warning(f"403 Forbidden on attempt {attempt + 1}, retrying in {2 ** attempt} seconds...")
-                    await asyncio.sleep(2 ** attempt)
+                logger.warning(f"HTTP error {e.response.status_code} for {url} (attempt {attempt + 1}/{retries})")
+                if attempt < retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.info(f"Retrying in {wait_time} seconds...")
+                    await asyncio.sleep(wait_time)
                     continue
-                raise e
+                logger.error(f"Failed after {retries} attempts for {url}")
+                return None  # Return None instead of raising exception
                 
             except RequestException as e:
+                logger.warning(f"Request exception for {url}: {e} (attempt {attempt + 1}/{retries})")
                 if attempt < retries - 1:
-                    logger.warning(f"Request failed on attempt {attempt + 1}, retrying in {2 ** attempt} seconds...")
-                    await asyncio.sleep(2 ** attempt)
+                    wait_time = 2 ** attempt
+                    logger.info(f"Retrying in {wait_time} seconds...")
+                    await asyncio.sleep(wait_time)
                     continue
-                raise e
+                logger.error(f"Failed after {retries} attempts for {url}")
+                return None  # Return None instead of raising exception
+                
+            except Exception as e:
+                logger.error(f"Unexpected error for {url}: {e}")
+                return None  # Return None for any other unexpected errors
     
     async def post(self, url, rjson=None, cs=False, retries=3, *args, **kwargs):
         for attempt in range(retries):
@@ -52,18 +63,29 @@ class Scraper:
                 if response.status_code == 200:
                     return response.json() if rjson else response.text
                 else:
+                    logger.warning(f"Non-200 status code {response.status_code} for {url}")
                     return None
                     
             except HTTPError as e:
-                if response.status_code == 403 and attempt < retries - 1:
-                    logger.warning(f"403 Forbidden on attempt {attempt + 1}, retrying in {2 ** attempt} seconds...")
-                    await asyncio.sleep(2 ** attempt)
+                logger.warning(f"HTTP error {e.response.status_code} for {url} (attempt {attempt + 1}/{retries})")
+                if attempt < retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.info(f"Retrying in {wait_time} seconds...")
+                    await asyncio.sleep(wait_time)
                     continue
-                raise e
+                logger.error(f"Failed after {retries} attempts for {url}")
+                return None  # Return None instead of raising exception
                 
             except RequestException as e:
+                logger.warning(f"Request exception for {url}: {e} (attempt {attempt + 1}/{retries})")
                 if attempt < retries - 1:
-                    logger.warning(f"Request failed on attempt {attempt + 1}, retrying in {2 ** attempt} seconds...")
-                    await asyncio.sleep(2 ** attempt)
+                    wait_time = 2 ** attempt
+                    logger.info(f"Retrying in {wait_time} seconds...")
+                    await asyncio.sleep(wait_time)
                     continue
-                raise e
+                logger.error(f"Failed after {retries} attempts for {url}")
+                return None  # Return None instead of raising exception
+                
+            except Exception as e:
+                logger.error(f"Unexpected error for {url}: {e}")
+                return None  # Return None for any other unexpected errors
