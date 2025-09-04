@@ -190,7 +190,7 @@ async def start(client, message):
         reply_markup=InlineKeyboardMarkup([
             [        
                 InlineKeyboardButton('📺 Anime Bot', url="https://t.me/Violetanimebot"),
-                InlineKeyboardButton("🆘 Support", url="https://t.me/TFIBOTS_SUPPORT")
+                InlineKeyboardButton("🆘 Support", url="https://t.me/+sT7FKCfO9DRkYTBl")
             ],
             [
                 InlineKeyboardButton("📚 Help Guide", callback_data="help_guide")
