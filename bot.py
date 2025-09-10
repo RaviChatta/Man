@@ -22,7 +22,7 @@ class Vars:
   UPDATE_CHANNEL = os.environ.get("UPDATE_CHANNEL", "@TFIBOTS_SUPPORT")
   DB_URL = os.environ.get("DB_URL", "mongodb+srv://mangadbdi:7R2PpNqaMNzNqMiT@manga.lya2tte.mongodb.net/?retryWrites=true&w=majority&appName=manga")
   
-  PORT = int(os.environ.get("PORT", "8080"))
+  PORT = int(os.environ.get("PORT", "8089"))
   ADMINS = [1047253913]
   
   IS_PRIVATE = os.environ.get("IS_PRIVATE", None) #True Or None  Bot is for admins only
