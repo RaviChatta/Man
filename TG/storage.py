@@ -56,6 +56,8 @@ web_data = {
     " Mgeko ": MgekoWebs(),
     " Manga18fx ": Manga18fxWebs(),
     " Manhwa18 ":  Manhwa18Webs(),
+    " AllManga ": AllMangaWebs(),  # Add this line
+    " MangaTaro ": MangaTaroWebs(),  # Add this line
   #  "NHentai": NHentaiWebs(),  # ← Correct spelling
 #    "Bato.to": BatoWebs(),  # ← Add this line for Bato
   #  "Toonily": ToonilyScraper(),  # Add this line
