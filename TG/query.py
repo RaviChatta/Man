@@ -590,11 +590,15 @@ async def pic_handler(client, query):
         logger.error(f"Error getting pictures: {e}")
         return await query.answer("⚠️ Error loading chapter", show_alert=True)
 
-    # Send initial status message
-    status_msg = await retry_on_flood(
-        query.message.reply_text,
-        "<i>⏳ Adding to download queue...</i>"
-    )
+    # Send initial status message - FIX: Make sure this is created
+    try:
+        status_msg = await retry_on_flood(
+            query.message.reply_text,
+            "<i>⏳ Adding to download queue...</i>"
+        )
+    except Exception as e:
+        logger.error(f"Failed to create status message: {e}")
+        status_msg = None
 
     # Prepare caption
     caption = f"""
@@ -607,16 +611,20 @@ async def pic_handler(client, query):
     # Add to queue and get task ID
     task_id = await queue.put((data, pictures, query, status_msg, webs), query.from_user.id)
 
-    # Add cancel button
-    buttons = [[
-        InlineKeyboardButton("❌ Cancel Download", callback_data=f"cl:{task_id}")
-    ]]
-    
-    await retry_on_flood(
-        status_msg.edit,
-        caption,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+    # Add cancel button only if status_msg exists
+    if status_msg:
+        buttons = [[
+            InlineKeyboardButton("❌ Cancel Download", callback_data=f"cl:{task_id}")
+        ]]
+        
+        await retry_on_flood(
+            status_msg.edit,
+            caption,
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    else:
+        # If no status message, just send a confirmation
+        await query.answer("✅ Added to download queue", show_alert=True)
 
 # ========================
 # TASK MANAGEMENT HANDLERS
