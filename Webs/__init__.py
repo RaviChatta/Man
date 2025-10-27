@@ -14,5 +14,7 @@ from .mgeko import MgekoWebs
 from .manhwa18 import Manhwa18Webs
 from .manga18fx import Manga18fxWebs
 from .nhentai import NHentaiWebs
-from .bato import BatoWebs  # Add this line
+from .bato import BatoWebs
 from .toonily import ToonilyScraper
+from .allmanga import AllMangaWebs  # Add this line
+from .mangataro import MangaTaroWebs  # Add this line
